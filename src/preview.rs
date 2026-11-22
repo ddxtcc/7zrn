@@ -2,12 +2,15 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+use crate::markdown::{self, Block};
+
 const MAX_TEXT: usize = 256 * 1024;
 
 #[derive(Clone, Debug)]
 pub(crate) enum PreviewContent {
     Loading,
     Text(String),
+    Markdown(Vec<Block>),
     Image,
     Unsupported(String),
     Error(String),
@@ -20,6 +23,7 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
     if is_image(path) {
         return PreviewContent::Image;
     }
+    let markdown = is_markdown(path);
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) => return PreviewContent::Error(format!("Could not read file: {error}")),
@@ -45,11 +49,26 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
     if text.is_empty() {
         return PreviewContent::Text("(empty file)".into());
     }
-    if truncated {
-        PreviewContent::Text(format!("{text}\n\n[preview truncated]"))
+    let text = if truncated {
+        format!("{text}\n\n[preview truncated]")
+    } else {
+        text
+    };
+    if markdown {
+        PreviewContent::Markdown(markdown::parse(&text))
     } else {
         PreviewContent::Text(text)
     }
+}
+
+fn is_markdown(path: &Path) -> bool {
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return false;
+    };
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "md" | "markdown" | "mdown" | "mkd"
+    )
 }
 
 fn is_image(path: &Path) -> bool {
@@ -112,6 +131,20 @@ mod tests {
         std::fs::write(&binary_path, [0, 1, 2, 3]).unwrap();
         assert!(matches!(load(&binary_path), PreviewContent::Unsupported(_)));
         std::fs::remove_file(&binary_path).unwrap();
+    }
+
+    #[test]
+    fn previews_markdown_by_extension() {
+        let path = temp_path("readme.md");
+        std::fs::write(&path, b"# Title\n\nBody\n").unwrap();
+        match load(&path) {
+            PreviewContent::Markdown(blocks) => assert!(matches!(
+                blocks.first(),
+                Some(Block::Heading { level: 1, .. })
+            )),
+            other => panic!("expected markdown preview, got {other:?}"),
+        }
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

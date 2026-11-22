@@ -1,6 +1,8 @@
 use std::ops::Range;
 use std::path::Path;
 
+mod languages;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SyntaxClass {
     Keyword,
@@ -22,201 +24,186 @@ pub(crate) enum Syntax {
     Css,
     Html,
     Javascript,
+    C,
+    Go,
+    Java,
+    CSharp,
+    Swift,
+    Kotlin,
+    Ruby,
+    Php,
+    Lua,
+    Sql,
+    Haskell,
+    Nix,
+    R,
+    Perl,
+    Dockerfile,
+    Makefile,
+    Cmake,
+    Ini,
+    Diff,
     Plain,
 }
 
 impl Syntax {
     pub(crate) fn detect(path: &Path) -> Self {
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            match name.to_ascii_lowercase().as_str() {
+                "dockerfile" | "containerfile" => return Syntax::Dockerfile,
+                "makefile" | "gnumakefile" | "justfile" => return Syntax::Makefile,
+                "cmakelists.txt" => return Syntax::Cmake,
+                "cargo.lock" => return Syntax::Toml,
+                _ => {}
+            }
+        }
         let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
             return Syntax::Plain;
         };
         match extension.to_ascii_lowercase().as_str() {
             "json" => Syntax::Json,
             "rs" => Syntax::Rust,
-            "py" => Syntax::Python,
-            "sh" | "bash" | "zsh" | "fish" => Syntax::Shell,
-            "toml" => Syntax::Toml,
+            "py" | "pyw" => Syntax::Python,
+            "sh" | "bash" | "zsh" | "fish" | "ksh" => Syntax::Shell,
+            "toml" | "lock" => Syntax::Toml,
             "yaml" | "yml" => Syntax::Yaml,
-            "css" => Syntax::Css,
-            "html" | "htm" | "xml" => Syntax::Html,
-            "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" => Syntax::Javascript,
+            "css" | "scss" | "sass" | "less" => Syntax::Css,
+            "html" | "htm" | "xml" | "xhtml" | "svg" | "vue" | "svelte" => Syntax::Html,
+            "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "mts" | "cts" => Syntax::Javascript,
+            "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx" | "hh" | "m" | "mm" | "proto" => {
+                Syntax::C
+            }
+            "go" => Syntax::Go,
+            "java" | "gradle" => Syntax::Java,
+            "cs" => Syntax::CSharp,
+            "kt" | "kts" => Syntax::Kotlin,
+            "swift" => Syntax::Swift,
+            "rb" | "rake" => Syntax::Ruby,
+            "php" | "phtml" => Syntax::Php,
+            "lua" => Syntax::Lua,
+            "sql" => Syntax::Sql,
+            "hs" | "lhs" => Syntax::Haskell,
+            "nix" => Syntax::Nix,
+            "r" => Syntax::R,
+            "pl" | "pm" => Syntax::Perl,
+            "mk" | "mak" => Syntax::Makefile,
+            "cmake" => Syntax::Cmake,
+            "ini" | "cfg" | "conf" | "service" | "desktop" => Syntax::Ini,
+            "diff" | "patch" => Syntax::Diff,
             _ => Syntax::Plain,
         }
     }
 
-    fn rules(self) -> Rules {
-        match self {
-            Syntax::Json => Rules {
-                line_comments: &[],
-                block_comment: None,
-                quotes: b"\"",
-                keywords: &[],
-                literals: &["true", "false", "null"],
-                key_separators: b":",
-                json_keys: true,
-                html: false,
-            },
-            Syntax::Rust => Rules {
-                line_comments: &[b"\x2f\x2f"],
-                block_comment: Some((b"/*", b"*/")),
-                quotes: b"\"'",
-                keywords: &[
-                    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else",
-                    "enum", "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop",
-                    "match", "mod", "move", "mut", "pub", "ref", "return", "self", "Self",
-                    "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where",
-                    "while",
-                ],
-                literals: &["false", "true", "None", "Some", "Ok", "Err"],
-                key_separators: &[],
-                json_keys: false,
-                html: false,
-            },
-            Syntax::Python => Rules {
-                line_comments: &[b"#"],
-                block_comment: None,
-                quotes: b"\"'",
-                keywords: &[
-                    "and", "as", "assert", "async", "await", "break", "class", "continue", "def",
-                    "del", "elif", "else", "except", "False", "finally", "for", "from", "global",
-                    "if", "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass",
-                    "raise", "return", "True", "try", "while", "with", "yield",
-                ],
-                literals: &["False", "None", "True"],
-                key_separators: &[],
-                json_keys: false,
-                html: false,
-            },
-            Syntax::Shell => Rules {
-                line_comments: &[b"#"],
-                block_comment: None,
-                quotes: b"\"'",
-                keywords: &[
-                    "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done",
-                    "case", "esac", "function", "in", "select", "time", "export", "local",
-                    "readonly", "declare", "unset", "shift", "return", "exit", "break", "continue",
-                ],
-                literals: &[],
-                key_separators: &[],
-                json_keys: false,
-                html: false,
-            },
-            Syntax::Toml => Rules {
-                line_comments: &[b"#"],
-                block_comment: None,
-                quotes: b"\"'",
-                keywords: &[],
-                literals: &["true", "false"],
-                key_separators: b"=",
-                json_keys: false,
-                html: false,
-            },
-            Syntax::Yaml => Rules {
-                line_comments: &[b"#"],
-                block_comment: None,
-                quotes: b"\"'",
-                keywords: &[],
-                literals: &["true", "false", "null", "yes", "no", "on", "off"],
-                key_separators: b":",
-                json_keys: false,
-                html: false,
-            },
-            Syntax::Css => Rules {
-                line_comments: &[],
-                block_comment: Some((b"/*", b"*/")),
-                quotes: b"\"'",
-                keywords: &[],
-                literals: &[],
-                key_separators: b":",
-                json_keys: false,
-                html: false,
-            },
-            Syntax::Html => Rules {
-                line_comments: &[],
-                block_comment: Some((b"<!--", b"-->")),
-                quotes: b"\"'",
-                keywords: &[],
-                literals: &[],
-                key_separators: &[],
-                json_keys: false,
-                html: true,
-            },
-            Syntax::Javascript => Rules {
-                line_comments: &[b"\x2f\x2f"],
-                block_comment: Some((b"/*", b"*/")),
-                quotes: b"\"'`",
-                keywords: &[
-                    "async",
-                    "await",
-                    "break",
-                    "case",
-                    "catch",
-                    "class",
-                    "const",
-                    "continue",
-                    "debugger",
-                    "default",
-                    "delete",
-                    "do",
-                    "else",
-                    "export",
-                    "extends",
-                    "false",
-                    "finally",
-                    "for",
-                    "function",
-                    "if",
-                    "import",
-                    "in",
-                    "instanceof",
-                    "let",
-                    "new",
-                    "null",
-                    "of",
-                    "return",
-                    "static",
-                    "super",
-                    "switch",
-                    "this",
-                    "throw",
-                    "true",
-                    "try",
-                    "typeof",
-                    "undefined",
-                    "var",
-                    "void",
-                    "while",
-                    "with",
-                    "yield",
-                ],
-                literals: &["true", "false", "null", "undefined"],
-                key_separators: &[],
-                json_keys: false,
-                html: false,
-            },
-            Syntax::Plain => Rules {
-                line_comments: &[],
-                block_comment: None,
-                quotes: &[],
-                keywords: &[],
-                literals: &[],
-                key_separators: &[],
-                json_keys: false,
-                html: false,
-            },
+    pub(crate) fn detect_with_text(path: &Path, text: &str) -> Self {
+        let syntax = Self::detect(path);
+        if syntax != Syntax::Plain {
+            return syntax;
+        }
+        let Some(shebang) = text
+            .lines()
+            .next()
+            .and_then(|line| line.trim().strip_prefix("#!"))
+        else {
+            return Syntax::Plain;
+        };
+        let shebang = shebang.to_ascii_lowercase();
+        if shebang.contains("python") {
+            Syntax::Python
+        } else if shebang.contains("node") || shebang.contains("deno") || shebang.contains("bun") {
+            Syntax::Javascript
+        } else if shebang.contains("ruby") {
+            Syntax::Ruby
+        } else if shebang.contains("perl") {
+            Syntax::Perl
+        } else if shebang.contains("php") {
+            Syntax::Php
+        } else if shebang.contains("lua") {
+            Syntax::Lua
+        } else if shebang.contains("rscript") {
+            Syntax::R
+        } else if shebang.contains("bash")
+            || shebang.contains("zsh")
+            || shebang.contains("fish")
+            || shebang.contains("sh")
+        {
+            Syntax::Shell
+        } else {
+            Syntax::Plain
         }
     }
-}
 
-struct Rules {
-    line_comments: &'static [&'static [u8]],
-    block_comment: Option<(&'static [u8], &'static [u8])>,
-    quotes: &'static [u8],
-    keywords: &'static [&'static str],
-    literals: &'static [&'static str],
-    key_separators: &'static [u8],
-    json_keys: bool,
-    html: bool,
+    pub(crate) fn from_label(label: &str) -> Self {
+        match label.trim().to_ascii_lowercase().as_str() {
+            "json" => Syntax::Json,
+            "rs" | "rust" => Syntax::Rust,
+            "py" | "python" => Syntax::Python,
+            "sh" | "bash" | "zsh" | "fish" | "ksh" | "shell" => Syntax::Shell,
+            "toml" => Syntax::Toml,
+            "yml" | "yaml" => Syntax::Yaml,
+            "css" | "scss" | "less" => Syntax::Css,
+            "html" | "htm" | "xml" | "svg" => Syntax::Html,
+            "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "mts" | "cts" | "javascript"
+            | "typescript" => Syntax::Javascript,
+            "c" | "h" | "cpp" | "c++" | "cxx" | "cc" | "hpp" | "objective-c" => Syntax::C,
+            "go" | "golang" => Syntax::Go,
+            "java" => Syntax::Java,
+            "cs" | "csharp" | "c#" => Syntax::CSharp,
+            "kt" | "kts" | "kotlin" => Syntax::Kotlin,
+            "swift" => Syntax::Swift,
+            "rb" | "ruby" | "rake" => Syntax::Ruby,
+            "php" => Syntax::Php,
+            "lua" => Syntax::Lua,
+            "sql" => Syntax::Sql,
+            "hs" | "haskell" => Syntax::Haskell,
+            "nix" => Syntax::Nix,
+            "r" => Syntax::R,
+            "pl" | "perl" => Syntax::Perl,
+            "dockerfile" | "docker" => Syntax::Dockerfile,
+            "makefile" | "make" | "mk" => Syntax::Makefile,
+            "cmake" => Syntax::Cmake,
+            "ini" | "cfg" | "conf" => Syntax::Ini,
+            "diff" | "patch" => Syntax::Diff,
+            _ => Syntax::Plain,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Syntax::Json => "JSON",
+            Syntax::Rust => "Rust",
+            Syntax::Python => "Python",
+            Syntax::Shell => "Shell",
+            Syntax::Toml => "TOML",
+            Syntax::Yaml => "YAML",
+            Syntax::Css => "CSS",
+            Syntax::Html => "HTML/XML",
+            Syntax::Javascript => "JavaScript/TypeScript",
+            Syntax::C => "C/C++",
+            Syntax::Go => "Go",
+            Syntax::Java => "Java",
+            Syntax::CSharp => "C#",
+            Syntax::Swift => "Swift",
+            Syntax::Kotlin => "Kotlin",
+            Syntax::Ruby => "Ruby",
+            Syntax::Php => "PHP",
+            Syntax::Lua => "Lua",
+            Syntax::Sql => "SQL",
+            Syntax::Haskell => "Haskell",
+            Syntax::Nix => "Nix",
+            Syntax::R => "R",
+            Syntax::Perl => "Perl",
+            Syntax::Dockerfile => "Dockerfile",
+            Syntax::Makefile => "Makefile",
+            Syntax::Cmake => "CMake",
+            Syntax::Ini => "INI",
+            Syntax::Diff => "Diff",
+            Syntax::Plain => "Text",
+        }
+    }
+
+    fn rules(self) -> languages::Rules {
+        languages::rules(self)
+    }
 }
 
 pub(crate) fn highlights(text: &str, syntax: Syntax) -> Vec<(Range<usize>, SyntaxClass)> {
@@ -225,6 +212,24 @@ pub(crate) fn highlights(text: &str, syntax: Syntax) -> Vec<(Range<usize>, Synta
     let mut highlights = Vec::new();
     let mut index = 0;
     while index < bytes.len() {
+        if rules.diff && (index == 0 || bytes[index - 1] == b'\n') {
+            let class = match bytes[index] {
+                b'+' => Some(SyntaxClass::String),
+                b'-' => Some(SyntaxClass::Comment),
+                b'@' => Some(SyntaxClass::Keyword),
+                _ => None,
+            };
+            if let Some(class) = class {
+                let end = bytes[index..]
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .map(|offset| index + offset)
+                    .unwrap_or(bytes.len());
+                highlights.push((index..end, class));
+                index = end;
+                continue;
+            }
+        }
         if line_comment_length(bytes, index, rules.line_comments).is_some() {
             let end = bytes[index..]
                 .iter()
@@ -394,11 +399,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detects_common_extensions() {
+    fn detects_common_extensions_and_names() {
         assert_eq!(Syntax::detect(Path::new("a.json")), Syntax::Json);
         assert_eq!(Syntax::detect(Path::new("a.rs")), Syntax::Rust);
         assert_eq!(Syntax::detect(Path::new("a.ts")), Syntax::Javascript);
+        assert_eq!(Syntax::detect(Path::new("a.go")), Syntax::Go);
+        assert_eq!(Syntax::detect(Path::new("a.cpp")), Syntax::C);
+        assert_eq!(Syntax::detect(Path::new("a.sql")), Syntax::Sql);
+        assert_eq!(Syntax::detect(Path::new("Dockerfile")), Syntax::Dockerfile);
+        assert_eq!(Syntax::detect(Path::new("Makefile")), Syntax::Makefile);
+        assert_eq!(Syntax::detect(Path::new("CMakeLists.txt")), Syntax::Cmake);
         assert_eq!(Syntax::detect(Path::new("a")), Syntax::Plain);
+    }
+
+    #[test]
+    fn detects_shebangs_and_fence_labels() {
+        assert_eq!(
+            Syntax::detect_with_text(Path::new("script"), "#!/usr/bin/env python3\nprint(1)"),
+            Syntax::Python
+        );
+        assert_eq!(
+            Syntax::detect_with_text(Path::new("script"), "#!/bin/bash\necho hi"),
+            Syntax::Shell
+        );
+        assert_eq!(Syntax::from_label("rust"), Syntax::Rust);
+        assert_eq!(Syntax::from_label("cpp"), Syntax::C);
+        assert_eq!(Syntax::from_label("ts"), Syntax::Javascript);
+        assert_eq!(Syntax::from_label("unknown"), Syntax::Plain);
     }
 
     #[test]
@@ -433,6 +460,24 @@ mod tests {
             found
                 .iter()
                 .any(|(_, class)| *class == SyntaxClass::Keyword)
+        );
+    }
+
+    #[test]
+    fn highlights_diff_lines() {
+        let text = "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n";
+        let found = highlights(text, Syntax::Diff);
+        assert!(
+            found
+                .iter()
+                .any(|(range, class)| *class == SyntaxClass::String
+                    && &text[range.clone()] == "+new")
+        );
+        assert!(
+            found
+                .iter()
+                .any(|(range, class)| *class == SyntaxClass::Comment
+                    && &text[range.clone()] == "-old")
         );
     }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Rendered Markdown previews with headings, lists, tables, quotes, links, and fenced code
+- Code previews with line numbers, language badges, tab expansion, and expanded syntax support
+- Shebang and filename detection for extensionless scripts and common build files
+
 ## 0.1.0 - 2026-11-22
 
 Initial release.

@@ -14,10 +14,12 @@ use crate::state::{EditTarget, Modal, Pane};
 use crate::ui::widgets::*;
 
 mod archive;
+mod code;
 mod columns;
 mod context;
 mod drag;
 mod help_modal;
+mod markdown;
 mod modals;
 mod panes;
 mod preview;

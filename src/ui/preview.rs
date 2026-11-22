@@ -1,12 +1,15 @@
 use std::path::Path;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, HighlightStyle, ObjectFit, StyledText, div, img, px, rgb};
+use gpui::{AnyElement, Context, ObjectFit, StyledText, div, img, px, rgb};
 
 use crate::app::AppView;
 use crate::preview::PreviewContent;
-use crate::syntax::{self, Syntax, SyntaxClass};
+use crate::state::PreviewView;
+use crate::syntax::Syntax;
 use crate::theme::Theme;
+use crate::ui::code::code_view;
+use crate::ui::markdown::markdown_view;
 
 impl AppView {
     pub(crate) fn render_preview_pane(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -16,6 +19,7 @@ impl AppView {
         };
         let title = preview.title.clone();
         let has_path = preview.path.is_some();
+        let language = preview_language(preview);
         let body: AnyElement = match &preview.content {
             PreviewContent::Loading => div()
                 .text_sm()
@@ -24,8 +28,14 @@ impl AppView {
                 .into_any_element(),
             PreviewContent::Text(text) => {
                 let path = preview.path.as_deref().unwrap_or_else(|| Path::new(""));
-                highlighted_text(text, path, theme)
+                let syntax = Syntax::detect_with_text(path, text);
+                if syntax == Syntax::Plain {
+                    plain_text(text, theme)
+                } else {
+                    code_view(text, syntax, theme, true)
+                }
             }
+            PreviewContent::Markdown(blocks) => markdown_view(blocks, theme),
             PreviewContent::Image => {
                 if let Some(path) = &preview.path {
                     div()
@@ -60,6 +70,49 @@ impl AppView {
                 .child(error.clone())
                 .into_any_element(),
         };
+        let mut header = div()
+            .h(px(26.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .border_b_1()
+            .border_color(rgb(theme.border))
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(rgb(theme.accent))
+                    .child("PREVIEW"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .truncate()
+                    .text_xs()
+                    .text_color(rgb(theme.muted))
+                    .child(title),
+            );
+        if let Some(language) = language {
+            header = header.child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(rgb(theme.dim))
+                    .child(language),
+            );
+        }
+        header = header
+            .child(
+                self.btn("preview-open", "Open", has_path, cx, |this, _, cx| {
+                    this.open_preview_file(cx)
+                }),
+            )
+            .child(self.btn("preview-close", "×", true, cx, |this, _, cx| {
+                this.close_preview(cx)
+            }));
         div()
             .h(gpui::relative(0.32))
             .flex_none()
@@ -68,41 +121,7 @@ impl AppView {
             .border_t_1()
             .border_color(rgb(theme.border))
             .bg(rgb(theme.panel))
-            .child(
-                div()
-                    .h(px(26.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .border_b_1()
-                    .border_color(rgb(theme.border))
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(rgb(theme.accent))
-                            .child("PREVIEW"),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .truncate()
-                            .text_xs()
-                            .text_color(rgb(theme.muted))
-                            .child(title),
-                    )
-                    .child(
-                        self.btn("preview-open", "Open", has_path, cx, |this, _, cx| {
-                            this.open_preview_file(cx)
-                        }),
-                    )
-                    .child(self.btn("preview-close", "×", true, cx, |this, _, cx| {
-                        this.close_preview(cx)
-                    })),
-            )
+            .child(header)
             .child(
                 div()
                     .id("preview-body")
@@ -116,37 +135,25 @@ impl AppView {
     }
 }
 
-fn highlighted_text(text: &str, path: &Path, theme: Theme) -> AnyElement {
-    let syntax = Syntax::detect(path);
-    let highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> =
-        syntax::highlights(text, syntax)
-            .into_iter()
-            .map(|(range, class)| {
-                (
-                    range,
-                    HighlightStyle::color(rgb(color_for(theme, class)).into()),
-                )
-            })
-            .collect();
-    let styled = if highlights.is_empty() {
-        StyledText::new(text.to_string())
-    } else {
-        StyledText::new(text.to_string()).with_highlights(highlights)
-    };
+fn plain_text(text: &str, theme: Theme) -> AnyElement {
     div()
         .w_full()
         .font_family("monospace")
         .text_xs()
+        .line_height(px(18.))
         .text_color(rgb(theme.text))
-        .child(styled)
+        .child(StyledText::new(text.to_string()))
         .into_any_element()
 }
 
-fn color_for(theme: Theme, class: SyntaxClass) -> u32 {
-    match class {
-        SyntaxClass::Keyword | SyntaxClass::Key => theme.accent,
-        SyntaxClass::String => theme.amber,
-        SyntaxClass::Number | SyntaxClass::Literal => theme.purple,
-        SyntaxClass::Comment => theme.dim,
+fn preview_language(preview: &PreviewView) -> Option<&'static str> {
+    match &preview.content {
+        PreviewContent::Markdown(_) => Some("Markdown"),
+        PreviewContent::Text(text) => {
+            let path = preview.path.as_deref().unwrap_or_else(|| Path::new(""));
+            let syntax = Syntax::detect_with_text(path, text);
+            (syntax != Syntax::Plain).then_some(syntax.label())
+        }
+        _ => None,
     }
 }

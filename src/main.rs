@@ -3,6 +3,7 @@ mod archive;
 mod columns;
 mod fsops;
 mod job;
+mod markdown;
 mod preview;
 mod settings;
 mod state;

@@ -9,7 +9,9 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - Encrypted archive passwords, with retry on wrong passwords
 - Add, delete, extract, test, and create archives
 - Extract to a chosen folder, with optional automatic reveal in Files
-- Inline text and image previews, with JSON and code syntax highlighting
+- Inline text, rendered Markdown, and image previews
+- Syntax-highlighted code previews with line numbers, language badges, and shebang detection
+- Markdown headings, lists, tables, quotes, links, and syntax-highlighted fenced code
 - Automatic preview of clicked files up to 4 MiB, configurable in Settings
 - Open files directly, extracting only the selected archive entry when needed
 - Right-click context menus in both panes
