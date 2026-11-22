@@ -1,0 +1,17 @@
+# Changelog
+
+## 0.1.0 - 2026-11-22
+
+Initial release.
+
+- Dual-pane GPUI archive manager for 7z, zip, tar, and compressed tar archives
+- Encrypted archive support with password prompts and retry
+- Add, delete, extract, test, and create archives
+- Inline preview pane for text, images, and syntax-highlighted JSON and code
+- Automatic click preview up to 4 MiB, with a Settings toggle
+- Open files directly, extracting only the selected archive entry
+- Context menus for both panes
+- Drag and drop between panes and external file drops
+- Resizable panes and columns, persisted across restarts
+- Six color themes
+- Desktop installer with archive MIME defaults and GitHub Actions packaging
