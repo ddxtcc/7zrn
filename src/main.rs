@@ -33,7 +33,6 @@ fn main() {
             None => cwd,
         };
         let restore_session = target.is_none();
-        eprintln!("startup: target={target:?} start={start:?}");
         let bounds = Bounds::centered(None, size(px(1220.0), px(780.0)), cx);
         let Ok(window) = cx.open_window(
             WindowOptions {
@@ -55,7 +54,6 @@ fn main() {
             eprintln!("failed to open the 7zrn window");
             return;
         };
-        eprintln!("startup: window opened");
         let _ = window.update(cx, |view, window, cx| {
             window.focus(&view.focus_handle(cx));
             if let Some(target) = target {

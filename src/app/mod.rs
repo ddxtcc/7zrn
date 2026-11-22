@@ -77,7 +77,6 @@ impl AppView {
         let mut fs = FsState::new(path);
         fs.show_hidden = settings.show_hidden;
         fs.clamp_active();
-        eprintln!("startup: AppView::new begin");
         let mut view = Self {
             focus_handle: cx.focus_handle(),
             focused: Pane::Fs,
@@ -111,9 +110,7 @@ impl AppView {
             theme_id,
             theme,
         };
-        eprintln!("startup: before restore");
         view.restore_session(restore_session, cx);
-        eprintln!("startup: AppView::new end");
         view
     }
 
