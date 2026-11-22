@@ -44,7 +44,7 @@ jobs:
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
       - run: desktop-file-validate packaging/7zrn.desktop
-      - run: sh -n packaging/install.sh
+      - run: sh -n packaging/*.sh
 
   build:
     needs: check
@@ -62,24 +62,16 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev wayland-protocols \
             libvulkan-dev libfontconfig1-dev libfreetype6-dev libx11-dev \
             libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
-            libxcb-xkb-dev libegl1-mesa-dev libgl1-mesa-dev
+            libxcb-xkb-dev libegl1-mesa-dev libgl1-mesa-dev \
+            curl desktop-file-utils dpkg file patchelf rpm
       - name: Build
         run: cargo build --release --locked
       - name: Package
-        run: |
-          rm -rf dist sevenzrn-linux-x86_64
-          mkdir -p dist/icons
-          cp target/release/sevenzrn dist/
-          strip dist/sevenzrn
-          cp packaging/7zrn.desktop dist/
-          install -Dm755 packaging/install.sh dist/install.sh
-          cp -r assets/icons/hicolor dist/icons/
-          cp -r dist sevenzrn-linux-x86_64
-          tar -czf sevenzrn-linux-x86_64.tar.gz sevenzrn-linux-x86_64
+        run: sh packaging/package.sh
       - uses: actions/upload-artifact@v7
         with:
           name: sevenzrn-linux-x86_64
-          path: sevenzrn-linux-x86_64.tar.gz
+          path: dist
           if-no-files-found: error
 
   release:
@@ -101,8 +93,8 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/sevenzrn-linux-x86_64.tar.gz --clobber
+            gh release upload "$tag" dist/* --clobber
           else
-            gh release create "$tag" dist/sevenzrn-linux-x86_64.tar.gz \
+            gh release create "$tag" dist/* \
               --title "7zrn $tag" --generate-notes
           fi

@@ -53,3 +53,16 @@ tar -xzf sevenzrn-linux-x86_64.tar.gz
 cd sevenzrn-linux-x86_64
 ./install.sh
 ```
+
+## Release packages
+
+Tagged releases include:
+
+- `sevenzrn_<version>_amd64.deb`
+- `sevenzrn-<version>-1.x86_64.rpm`
+- `sevenzrn-<version>-x86_64.AppImage`
+- `sevenzrn-linux-x86_64.tar.gz`
+- `SHA256SUMS`
+
+The deb and RPM packages install the binary, desktop entry, and icons.
+The AppImage and tarball use the host `7z` and `tar` tools.

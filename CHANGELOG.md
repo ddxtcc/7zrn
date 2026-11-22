@@ -14,4 +14,5 @@ Initial release.
 - Drag and drop between panes and external file drops
 - Resizable panes and columns, persisted across restarts
 - Six color themes
-- Desktop installer with archive MIME defaults and GitHub Actions packaging
+- Desktop installer with archive MIME defaults
+- Debian, RPM, AppImage, and tarball release packages
