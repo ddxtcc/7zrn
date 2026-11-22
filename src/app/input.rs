@@ -536,19 +536,15 @@ impl AppView {
                 Pane::Fs => self.preview_fs_active(cx),
                 Pane::Archive => self.preview_archive_active(cx),
             },
-            "f2" => {
-                if self.focused == Pane::Archive {
-                    self.open_rename_modal(window, cx);
-                }
+            "f2" if self.focused == Pane::Archive => {
+                self.open_rename_modal(window, cx);
             }
             "f5" => match self.focused {
                 Pane::Fs => self.refresh_fs(cx),
                 Pane::Archive => self.refresh_archive(cx),
             },
-            "f7" => {
-                if self.focused == Pane::Archive {
-                    self.open_new_folder_modal(window, cx);
-                }
+            "f7" if self.focused == Pane::Archive => {
+                self.open_new_folder_modal(window, cx);
             }
             _ => {}
         }
