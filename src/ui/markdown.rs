@@ -1,22 +1,185 @@
+use std::path::{Path, PathBuf};
+
 use gpui::prelude::*;
 use gpui::{
     AnyElement, FontStyle, FontWeight, HighlightStyle, StrikethroughStyle, StyledText,
-    UnderlineStyle, div, px, rgb,
+    UnderlineStyle, div, img, px, rgb,
 };
 
+use crate::app::AppView;
 use crate::markdown::{Block, Inline, InlineStyle};
 use crate::syntax::Syntax;
 use crate::theme::Theme;
 use crate::ui::code::code_view;
 
-pub(crate) fn markdown_view(blocks: &[Block], theme: Theme) -> AnyElement {
-    div()
+pub(crate) fn markdown_view(
+    blocks: &[Block],
+    theme: Theme,
+    base: Option<&Path>,
+    cx: &mut gpui::Context<AppView>,
+) -> AnyElement {
+    let mut view = div()
         .w_full()
         .flex()
         .flex_col()
         .gap_2()
-        .children(blocks.iter().map(|block| block_view(block, theme)))
-        .into_any_element()
+        .children(blocks.iter().map(|block| block_view(block, theme)));
+    let mut links = Vec::new();
+    collect_links(blocks, &mut links);
+    links.sort();
+    links.dedup();
+    if !links.is_empty() {
+        let mut footer = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .pt_2()
+            .border_t_1()
+            .border_color(rgb(theme.border))
+            .child(div().text_xs().text_color(rgb(theme.dim)).child("Links"));
+        for (index, (label, url)) in links.into_iter().enumerate() {
+            let target = url.clone();
+            footer = footer.child(
+                div()
+                    .id(("markdown-link", index))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .cursor_pointer()
+                    .text_xs()
+                    .text_color(rgb(theme.accent))
+                    .hover(move |style| style.underline())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.open_url_external(target.clone(), cx);
+                    }))
+                    .child(format!("{label} → {url}")),
+            );
+        }
+        view = view.child(footer);
+    }
+    let mut images = Vec::new();
+    collect_images(blocks, &mut images);
+    images.sort();
+    images.dedup();
+    let base_directory = base.and_then(|path| path.parent()).map(Path::to_path_buf);
+    let mut gallery = div().w_full().flex().flex_col().gap_2();
+    let mut found = false;
+    for source in images {
+        if source.starts_with("http://") || source.starts_with("https://") {
+            continue;
+        }
+        let Some(directory) = &base_directory else {
+            continue;
+        };
+        let path = if Path::new(&source).is_absolute() {
+            PathBuf::from(&source)
+        } else {
+            directory.join(&source)
+        };
+        if !path.is_file() {
+            continue;
+        }
+        found = true;
+        gallery = gallery.child(
+            div().w_full().flex().justify_center().child(
+                img(path)
+                    .w_full()
+                    .max_h(px(320.))
+                    .object_fit(gpui::ObjectFit::Contain),
+            ),
+        );
+    }
+    if found {
+        view = view.child(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(div().text_xs().text_color(rgb(theme.dim)).child("Images"))
+                .child(gallery),
+        );
+    }
+    view.into_any_element()
+}
+
+fn collect_images(blocks: &[Block], images: &mut Vec<String>) {
+    for block in blocks {
+        match block {
+            Block::Heading { content, .. } | Block::Paragraph(content) => {
+                for inline in content {
+                    if let Some(image) = &inline.image {
+                        images.push(image.clone());
+                    }
+                }
+            }
+            Block::Quote(inner) => collect_images(inner, images),
+            Block::List { items, .. } => {
+                for item in items {
+                    collect_images(item, images);
+                }
+            }
+            Block::Table { header, rows } => {
+                for cell in header {
+                    for inline in cell {
+                        if let Some(image) = &inline.image {
+                            images.push(image.clone());
+                        }
+                    }
+                }
+                for row in rows {
+                    for cell in row {
+                        for inline in cell {
+                            if let Some(image) = &inline.image {
+                                images.push(image.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_links(blocks: &[Block], links: &mut Vec<(String, String)>) {
+    for block in blocks {
+        match block {
+            Block::Heading { content, .. } | Block::Paragraph(content) => {
+                for inline in content {
+                    if let Some(url) = &inline.link {
+                        links.push((inline.text.trim().to_string(), url.clone()));
+                    }
+                }
+            }
+            Block::Quote(inner) => collect_links(inner, links),
+            Block::List { items, .. } => {
+                for item in items {
+                    collect_links(item, links);
+                }
+            }
+            Block::Table { header, rows } => {
+                for cell in header {
+                    for inline in cell {
+                        if let Some(url) = &inline.link {
+                            links.push((inline.text.trim().to_string(), url.clone()));
+                        }
+                    }
+                }
+                for row in rows {
+                    for cell in row {
+                        for inline in cell {
+                            if let Some(url) = &inline.link {
+                                links.push((inline.text.trim().to_string(), url.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn block_view(block: &Block, theme: Theme) -> AnyElement {
@@ -69,7 +232,7 @@ fn block_view(block: &Block, theme: Theme) -> AnyElement {
                         .child(syntax.label()),
                 );
             }
-            body.child(code_view(code, syntax, theme, false))
+            body.child(code_view(code, syntax, theme, false, true))
                 .into_any_element()
         }
         Block::Quote(inner) => div()

@@ -8,15 +8,22 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - 7z, zip, tar, compressed tar, gzip, bzip2, xz, zstd, rar, iso, and deb support through 7z and tar
 - Encrypted archive passwords, with retry on wrong passwords
 - Add, delete, extract, test, and create archives
+- Rename, move, copy, and create folders inside archives
+- Tabs with session restore and nested archive browsing
+- Recursive name and content search, plus a command palette
+- Cancelable long-running jobs with an operation log
 - Extract to a chosen folder, with optional automatic reveal in Files
 - Inline text, rendered Markdown, and image previews
 - Syntax-highlighted code previews with line numbers, language badges, and shebang detection
-- Markdown headings, lists, tables, quotes, links, and syntax-highlighted fenced code
+- Markdown headings, lists, tables, quotes, clickable links, local images, and syntax-highlighted fenced code
+- PDF and image previews with zoom, plus a resizable preview pane
 - Automatic preview of clicked files up to 4 MiB, configurable in Settings
 - Open files directly, extracting only the selected archive entry when needed
 - Right-click context menus in both panes
 - Drag files between panes and accept external file drops
-- Resizable panes and columns, with persisted sizes
+- Archive creation options for compression, passwords, split volumes, and excludes
+- Archive properties with format, size, ratio, encryption, and methods
+- Resizable panes, columns, and preview, with persisted sizes
 - Six color themes: Dark, Light, Nord, Gruvbox, Dracula, and Solarized
 - Desktop integration and archive MIME defaults through the local installer
 
@@ -25,6 +32,7 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - Rust stable
 - `7z` (7zip on Ubuntu 24.04) and `tar`
 - `gzip`, `bzip2`, `xz`, and `zstd` for compressed tar and single stream archives
+- `pdftoppm` from poppler-utils for PDF previews
 
 ## Build and run
 
@@ -68,3 +76,21 @@ Tagged releases include:
 
 The deb and RPM packages install the binary, desktop entry, and icons.
 The AppImage and tarball use the host `7z` and `tar` tools.
+
+## Arch and Flatpak packaging
+
+Arch users can build the VCS package from `packaging/aur`:
+
+```sh
+cd packaging/aur
+makepkg -si
+```
+
+The package is named `sevenzrn-git` and tracks the main branch, because the
+v0.1.0 tag predates the current main branch. It depends on `7zip`, `tar`, and
+the GPUI runtime libraries.
+
+Flatpak packaging is in `packaging/flatpak`. See
+[`packaging/flatpak/README.md`](packaging/flatpak/README.md) for prerequisites,
+build commands, and runtime limitations. The Flatpak bundles 7-Zip from source
+and uses the application ID `io.github.ddxtcc.SevenZrn`.

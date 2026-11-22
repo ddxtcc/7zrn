@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::markdown::{self, Block};
 
@@ -10,10 +10,20 @@ const MAX_TEXT: usize = 256 * 1024;
 pub(crate) enum PreviewContent {
     Loading,
     Text(String),
-    Markdown(Vec<Block>),
-    Image,
+    Markdown { source: String, blocks: Vec<Block> },
+    Image { path: PathBuf },
     Unsupported(String),
     Error(String),
+}
+
+impl PreviewContent {
+    pub(crate) fn copy_text(&self) -> Option<String> {
+        match self {
+            PreviewContent::Text(text) => Some(text.clone()),
+            PreviewContent::Markdown { source, .. } => Some(source.clone()),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn load(path: &Path) -> PreviewContent {
@@ -21,7 +31,19 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
         return PreviewContent::Error("Not a file".into());
     }
     if is_image(path) {
-        return PreviewContent::Image;
+        return PreviewContent::Image {
+            path: path.to_path_buf(),
+        };
+    }
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+    {
+        return match render_pdf(path) {
+            Ok(path) => PreviewContent::Image { path },
+            Err(message) => PreviewContent::Unsupported(message),
+        };
     }
     let markdown = is_markdown(path);
     let file = match File::open(path) {
@@ -55,7 +77,10 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
         text
     };
     if markdown {
-        PreviewContent::Markdown(markdown::parse(&text))
+        PreviewContent::Markdown {
+            source: text.clone(),
+            blocks: markdown::parse(&text),
+        }
     } else {
         PreviewContent::Text(text)
     }
@@ -69,6 +94,43 @@ fn is_markdown(path: &Path) -> bool {
         extension.to_ascii_lowercase().as_str(),
         "md" | "markdown" | "mdown" | "mkd"
     )
+}
+
+fn render_pdf(path: &Path) -> Result<PathBuf, String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let directory = std::env::temp_dir().join(format!("7zrn-pdf-{}-{stamp}", std::process::id()));
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not create PDF preview directory: {error}"))?;
+    let output = directory.join("page");
+    let result = std::process::Command::new("pdftoppm")
+        .args(["-png", "-f", "1", "-singlefile", "-r", "96"])
+        .arg(path)
+        .arg(&output)
+        .output();
+    match result {
+        Ok(result) if result.status.success() => {
+            let rendered = output.with_extension("png");
+            if rendered.is_file() {
+                Ok(rendered)
+            } else {
+                Err("PDF preview produced no image.".into())
+            }
+        }
+        Ok(result) => {
+            let detail = String::from_utf8_lossy(&result.stderr);
+            Err(format!(
+                "Could not render PDF. Install poppler-utils (pdftoppm).\n{}",
+                detail.trim()
+            ))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err("PDF preview requires pdftoppm from poppler-utils.".into())
+        }
+        Err(error) => Err(format!("Could not render PDF: {error}")),
+    }
 }
 
 fn is_image(path: &Path) -> bool {
@@ -138,7 +200,7 @@ mod tests {
         let path = temp_path("readme.md");
         std::fs::write(&path, b"# Title\n\nBody\n").unwrap();
         match load(&path) {
-            PreviewContent::Markdown(blocks) => assert!(matches!(
+            PreviewContent::Markdown { blocks, .. } => assert!(matches!(
                 blocks.first(),
                 Some(Block::Heading { level: 1, .. })
             )),
@@ -151,7 +213,7 @@ mod tests {
     fn previews_images_by_extension() {
         let path = temp_path("image.png");
         std::fs::write(&path, []).unwrap();
-        assert!(matches!(load(&path), PreviewContent::Image));
+        assert!(matches!(load(&path), PreviewContent::Image { .. }));
         std::fs::remove_file(&path).unwrap();
     }
 }

@@ -6,7 +6,8 @@ use crate::columns::{ArchiveColumns, ColumnResize, FsColumns, HScrollDrag, PaneS
 use crate::job::SharedJob;
 use crate::settings::Settings;
 use crate::state::{
-    ArchiveState, ContextMenu, EditState, FsState, Message, Modal, Pane, PendingAction, PreviewView,
+    ArchiveState, ContextMenu, EditState, FsState, Message, Modal, Pane, PendingAction,
+    PreviewSplitDrag, PreviewView, Tab,
 };
 use crate::theme::{Theme, ThemeId};
 
@@ -18,9 +19,12 @@ mod input;
 pub(crate) mod layout;
 mod modals;
 mod navigation;
+mod palette;
 mod preferences;
 mod preview;
+mod search;
 mod selection;
+mod tabs;
 
 pub(crate) struct AppView {
     pub(crate) focus_handle: FocusHandle,
@@ -32,6 +36,12 @@ pub(crate) struct AppView {
     pub(crate) context_menu: Option<ContextMenu>,
     pub(crate) preview: Option<PreviewView>,
     pub(crate) preview_generation: u64,
+    pub(crate) preview_ratio: f32,
+    pub(crate) preview_drag: Option<PreviewSplitDrag>,
+    pub(crate) code_wrap: bool,
+    pub(crate) image_zoom: f32,
+    pub(crate) tabs: Vec<Tab>,
+    pub(crate) active_tab: usize,
     pub(crate) job: Option<SharedJob>,
     pub(crate) last_action: Option<PendingAction>,
     pub(crate) message: Option<Message>,
@@ -57,7 +67,7 @@ impl Focusable for AppView {
 }
 
 impl AppView {
-    pub(crate) fn new(path: PathBuf, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(path: PathBuf, restore_session: bool, cx: &mut Context<Self>) -> Self {
         let settings = Settings::load();
         let fs_columns = settings.fs_columns;
         let archive_columns = settings.archive_columns;
@@ -67,7 +77,8 @@ impl AppView {
         let mut fs = FsState::new(path);
         fs.show_hidden = settings.show_hidden;
         fs.clamp_active();
-        Self {
+        eprintln!("startup: AppView::new begin");
+        let mut view = Self {
             focus_handle: cx.focus_handle(),
             focused: Pane::Fs,
             fs,
@@ -77,6 +88,12 @@ impl AppView {
             context_menu: None,
             preview: None,
             preview_generation: 0,
+            preview_ratio: settings.preview_ratio,
+            preview_drag: None,
+            code_wrap: false,
+            image_zoom: 1.0,
+            tabs: vec![Tab::empty()],
+            active_tab: 0,
             job: None,
             last_action: None,
             message: None,
@@ -93,7 +110,11 @@ impl AppView {
             settings_error: None,
             theme_id,
             theme,
-        }
+        };
+        eprintln!("startup: before restore");
+        view.restore_session(restore_session, cx);
+        eprintln!("startup: AppView::new end");
+        view
     }
 
     pub(crate) fn set_message(&mut self, text: impl Into<String>, error: bool) {

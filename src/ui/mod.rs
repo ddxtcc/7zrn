@@ -10,6 +10,7 @@ use gpui::{
 use crate::app::AppView;
 use crate::app::layout::SPLITTER_WIDTH;
 use crate::fsops;
+use crate::job;
 use crate::state::{EditTarget, Modal, Pane};
 use crate::ui::widgets::*;
 
@@ -24,6 +25,7 @@ mod modals;
 mod panes;
 mod preview;
 mod settings_modal;
+mod tabs;
 pub(crate) mod widgets;
 
 impl AppView {
@@ -325,7 +327,7 @@ impl AppView {
             .into_any_element()
     }
 
-    pub(crate) fn render_status_bar(&self, _cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_status_bar(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let summary = match self.focused {
             Pane::Fs => {
@@ -426,6 +428,35 @@ impl AppView {
                                 .unwrap_or_else(|| "…".to_string()),
                         ),
                 )
+                .child(self.btn("job-log", "Log", true, cx, |this, _, cx| {
+                    let body = this.job.as_ref().map(|job| {
+                        let job = job.lock().unwrap();
+                        let mut body = job.label.clone();
+                        body.push('\n');
+                        if let Some(percent) = job.percent {
+                            body.push_str(&format!("{percent}%\n"));
+                        }
+                        for line in &job.log {
+                            body.push_str(line);
+                            body.push('\n');
+                        }
+                        body
+                    });
+                    if let Some(body) = body {
+                        this.modal = Some(Modal::Info {
+                            title: "Operation log".into(),
+                            body,
+                            error: false,
+                        });
+                    }
+                    cx.notify();
+                }))
+                .child(self.btn("job-cancel", "Cancel", true, cx, |this, _, cx| {
+                    if let Some(job) = &this.job {
+                        job::cancel(job);
+                    }
+                    cx.notify();
+                }))
                 .into_any_element()
         } else if let Some(message) = &self.message {
             div()
@@ -497,6 +528,7 @@ impl Render for AppView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::column_resize_end))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::column_resize_end))
             .child(self.render_top_bar(window_width, cx))
+            .child(self.render_tab_bar(cx))
             .child(
                 div()
                     .flex()

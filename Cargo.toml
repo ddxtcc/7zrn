@@ -6,6 +6,7 @@ description = "7zrn - a native GPUI archive manager for Linux, powered by the 7-
 
 [dependencies]
 gpui = "0.2.2"
+image = "0.25"
 libc = "0.2.190"
 pulldown-cmark = "0.13.6"
 

@@ -29,6 +29,8 @@ pub(crate) enum Block {
 pub(crate) struct Inline {
     pub(crate) text: String,
     pub(crate) style: InlineStyle,
+    pub(crate) link: Option<String>,
+    pub(crate) image: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -107,6 +109,8 @@ fn parse_blocks(events: &mut Peekable<Parser<'_>>, end: Option<TagEnd>) -> Vec<B
                     blocks.push(Block::Paragraph(vec![Inline {
                         text: raw,
                         style: InlineStyle::default(),
+                        link: None,
+                        image: None,
                     }]));
                 }
             }
@@ -195,7 +199,9 @@ fn parse_inlines_bounded(
 ) -> Vec<Inline> {
     let mut inlines = Vec::new();
     let mut style = InlineStyle::default();
-    let mut stack = Vec::new();
+    let mut link: Option<String> = None;
+    let mut image: Option<String> = None;
+    let mut stack: Vec<(InlineStyle, Option<String>, Option<String>)> = Vec::new();
     loop {
         if stop_at_block {
             match events.peek() {
@@ -211,50 +217,103 @@ fn parse_inlines_bounded(
         match event {
             Event::End(tag) if Some(tag) == end => break,
             Event::Start(Tag::Emphasis) => {
-                stack.push(style);
+                stack.push((style, link.clone(), image.clone()));
                 style.italic = true;
             }
             Event::Start(Tag::Strong) => {
-                stack.push(style);
+                stack.push((style, link.clone(), image.clone()));
                 style.bold = true;
             }
             Event::Start(Tag::Strikethrough) => {
-                stack.push(style);
+                stack.push((style, link.clone(), image.clone()));
                 style.strikethrough = true;
             }
-            Event::Start(Tag::Link { .. }) | Event::Start(Tag::Image { .. }) => {
-                stack.push(style);
+            Event::Start(Tag::Link { dest_url, .. }) => {
+                stack.push((style, link.clone(), image.clone()));
                 style.link = true;
+                link = Some(dest_url.to_string());
+            }
+            Event::Start(Tag::Image { dest_url, .. }) => {
+                stack.push((style, link.clone(), image.clone()));
+                style.link = true;
+                link = Some(dest_url.to_string());
+                image = Some(dest_url.to_string());
             }
             Event::End(TagEnd::Emphasis)
             | Event::End(TagEnd::Strong)
             | Event::End(TagEnd::Strikethrough)
             | Event::End(TagEnd::Link)
             | Event::End(TagEnd::Image) => {
-                if let Some(previous) = stack.pop() {
+                if let Some((previous, previous_link, previous_image)) = stack.pop() {
                     style = previous;
+                    link = previous_link;
+                    image = previous_image;
                 }
             }
-            Event::Text(text) => push_inline(&mut inlines, &text, style),
+            Event::Text(text) => {
+                push_inline(
+                    &mut inlines,
+                    &text,
+                    style,
+                    link.as_deref(),
+                    image.as_deref(),
+                );
+            }
             Event::Code(text) => {
                 let mut code_style = style;
                 code_style.code = true;
-                push_inline(&mut inlines, &text, code_style);
+                push_inline(
+                    &mut inlines,
+                    &text,
+                    code_style,
+                    link.as_deref(),
+                    image.as_deref(),
+                );
             }
             Event::InlineMath(text) | Event::DisplayMath(text) => {
                 let mut code_style = style;
                 code_style.code = true;
-                push_inline(&mut inlines, &text, code_style);
+                push_inline(
+                    &mut inlines,
+                    &text,
+                    code_style,
+                    link.as_deref(),
+                    image.as_deref(),
+                );
             }
-            Event::SoftBreak => push_inline(&mut inlines, " ", style),
-            Event::HardBreak => push_inline(&mut inlines, "\n", style),
+            Event::SoftBreak => {
+                push_inline(&mut inlines, " ", style, link.as_deref(), image.as_deref());
+            }
+            Event::HardBreak => {
+                push_inline(&mut inlines, "\n", style, link.as_deref(), image.as_deref());
+            }
             Event::TaskListMarker(checked) => {
-                push_inline(&mut inlines, if checked { "☑ " } else { "☐ " }, style);
+                push_inline(
+                    &mut inlines,
+                    if checked { "☑ " } else { "☐ " },
+                    style,
+                    link.as_deref(),
+                    image.as_deref(),
+                );
             }
             Event::FootnoteReference(label) => {
-                push_inline(&mut inlines, &format!("[^{label}]"), style);
+                push_inline(
+                    &mut inlines,
+                    &format!("[^{label}]"),
+                    style,
+                    link.as_deref(),
+                    image.as_deref(),
+                );
             }
-            Event::InlineHtml(text) => push_inline(&mut inlines, &text, style),
+            Event::InlineHtml(text) => {
+                push_inline(
+                    &mut inlines,
+                    &text,
+                    style,
+                    link.as_deref(),
+                    image.as_deref(),
+                );
+            }
             _ => {}
         }
     }
@@ -279,12 +338,20 @@ fn is_block_start(tag: &Tag<'_>) -> bool {
     )
 }
 
-fn push_inline(inlines: &mut Vec<Inline>, text: &str, style: InlineStyle) {
+fn push_inline(
+    inlines: &mut Vec<Inline>,
+    text: &str,
+    style: InlineStyle,
+    link: Option<&str>,
+    image: Option<&str>,
+) {
     if text.is_empty() {
         return;
     }
     if let Some(last) = inlines.last_mut()
         && last.style == style
+        && last.link.as_deref() == link
+        && last.image.as_deref() == image
     {
         last.text.push_str(text);
         return;
@@ -292,6 +359,8 @@ fn push_inline(inlines: &mut Vec<Inline>, text: &str, style: InlineStyle) {
     inlines.push(Inline {
         text: text.to_string(),
         style,
+        link: link.map(str::to_string),
+        image: image.map(str::to_string),
     });
 }
 

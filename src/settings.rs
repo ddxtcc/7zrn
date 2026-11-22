@@ -77,6 +77,7 @@ pub(crate) struct Settings {
     pub(crate) auto_preview: bool,
     pub(crate) theme: ThemeId,
     pub(crate) split: f32,
+    pub(crate) preview_ratio: f32,
     pub(crate) fs_columns: FsColumns,
     pub(crate) archive_columns: ArchiveColumns,
 }
@@ -91,6 +92,7 @@ impl Default for Settings {
             auto_preview: true,
             theme: ThemeId::Dark,
             split: 0.5,
+            preview_ratio: 0.32,
             fs_columns: FsColumns::default(),
             archive_columns: ArchiveColumns::default(),
         }
@@ -129,6 +131,13 @@ impl Settings {
                         && value.is_finite()
                     {
                         settings.split = value.clamp(0.15, 0.85);
+                    }
+                }
+                "preview_ratio" => {
+                    if let Ok(value) = raw.parse::<f32>()
+                        && value.is_finite()
+                    {
+                        settings.preview_ratio = value.clamp(0.15, 0.75);
                     }
                 }
                 "fs_name" => {
@@ -190,7 +199,7 @@ impl Settings {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create {}: {error}", parent.display()))?;
         let contents = format!(
-            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\ntheme={}\nsplit={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
+            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
             self.single_click_open,
             self.confirm_delete,
             self.show_hidden,
@@ -198,6 +207,7 @@ impl Settings {
             self.auto_preview,
             self.theme.key(),
             self.split,
+            self.preview_ratio,
             self.fs_columns.name.unwrap_or(0.0),
             self.fs_columns.size,
             self.fs_columns.modified,
@@ -261,6 +271,7 @@ mod tests {
             auto_preview: false,
             theme: ThemeId::Nord,
             split: 0.37,
+            preview_ratio: 0.41,
             fs_columns: FsColumns {
                 name: Some(222.0),
                 size: 101.0,
@@ -284,6 +295,7 @@ mod tests {
         assert!(!loaded.auto_preview);
         assert_eq!(loaded.theme, ThemeId::Nord);
         assert!((loaded.split - 0.37).abs() < 0.001);
+        assert!((loaded.preview_ratio - 0.41).abs() < 0.001);
         assert_eq!(loaded.fs_columns.name, Some(222.0));
         assert_eq!(loaded.fs_columns.size, 101.0);
         assert_eq!(loaded.fs_columns.modified, 151.0);

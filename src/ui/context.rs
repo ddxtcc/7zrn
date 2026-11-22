@@ -19,7 +19,7 @@ impl AppView {
         }
         let theme = self.theme;
         let width = 224.0;
-        let height = 7.0 * 26.0 + 8.0;
+        let height = 12.0 * 26.0 + 8.0;
         let window_width = f32::from(window.bounds().size.width);
         let window_height = f32::from(window.bounds().size.height);
         let x = menu.x.clamp(4.0, (window_width - width - 8.0).max(4.0));
@@ -119,6 +119,18 @@ impl AppView {
                         .unwrap_or(false)
                     && !self.arc_action_keys().is_empty();
                 let can_copy = active.is_some() || !self.archive.selected.is_empty();
+                let can_edit = has_archive
+                    && self
+                        .archive
+                        .format
+                        .map(|format| format.can_modify())
+                        .unwrap_or(false);
+                let can_rename = can_edit
+                    && active
+                        .as_ref()
+                        .map(|child| !child.is_parent)
+                        .unwrap_or(false);
+                let can_copy_move = can_edit && !self.arc_action_keys().is_empty();
                 div()
                     .flex()
                     .flex_col()
@@ -136,6 +148,34 @@ impl AppView {
                         active_file,
                         cx,
                         |this, _, cx| this.preview_archive_active(cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-arc-new-folder",
+                        "New folder…",
+                        can_edit,
+                        cx,
+                        |this, window, cx| this.open_new_folder_modal(window, cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-arc-rename",
+                        "Rename…",
+                        can_rename,
+                        cx,
+                        |this, window, cx| this.open_rename_modal(window, cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-arc-copy-to",
+                        "Copy to folder…",
+                        can_copy_move,
+                        cx,
+                        |this, window, cx| this.open_copy_move_modal(true, window, cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-arc-move-to",
+                        "Move to folder…",
+                        can_copy_move,
+                        cx,
+                        |this, window, cx| this.open_copy_move_modal(false, window, cx),
                     ))
                     .child(self.context_row(
                         "ctx-arc-extract",
@@ -174,6 +214,13 @@ impl AppView {
                         has_archive,
                         cx,
                         |this, _, cx| this.refresh_archive(cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-arc-properties",
+                        "Properties",
+                        has_archive,
+                        cx,
+                        |this, _, cx| this.open_archive_properties(cx),
                     ))
                     .into_any_element()
             }

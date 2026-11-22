@@ -3,6 +3,7 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use crate::archive::Listing;
 
@@ -14,6 +15,7 @@ pub enum JobKind {
     Delete,
     Test,
     Create,
+    Modify,
 }
 
 #[derive(Clone, Debug)]
@@ -34,7 +36,13 @@ pub enum JobPayload {
     Created {
         archive: std::path::PathBuf,
     },
+    Nested {
+        path: std::path::PathBuf,
+        title: String,
+    },
 }
+
+pub const CANCELLED: &str = "Operation cancelled";
 
 pub struct Job {
     pub kind: JobKind,
@@ -42,6 +50,8 @@ pub struct Job {
     pub percent: Option<u8>,
     pub log: VecDeque<String>,
     pub done: bool,
+    pub cancel: bool,
+    pub pid: Option<u32>,
     pub result: Option<Result<JobPayload, String>>,
 }
 
@@ -54,6 +64,8 @@ pub fn new_job(kind: JobKind, label: impl Into<String>) -> SharedJob {
         percent: None,
         log: VecDeque::new(),
         done: false,
+        cancel: false,
+        pid: None,
         result: None,
     }))
 }
@@ -66,7 +78,17 @@ pub fn note(job: &SharedJob, line: impl Into<String>) {
 pub fn finish(job: &SharedJob, result: Result<JobPayload, String>) {
     let mut job = job.lock().unwrap();
     job.done = true;
+    job.pid = None;
     job.result = Some(result);
+}
+
+pub fn cancel(job: &SharedJob) {
+    let mut job = job.lock().unwrap();
+    if job.done || job.cancel {
+        return;
+    }
+    job.cancel = true;
+    push_log(&mut job, "Cancelling operation...".to_string());
 }
 
 fn push_log(job: &mut Job, line: String) {
@@ -101,6 +123,9 @@ pub fn run_capture(cmd: &mut Command, job: &SharedJob) -> Result<String, String>
 }
 
 fn run_impl(cmd: &mut Command, job: &SharedJob, capture_stdout: bool) -> Result<String, String> {
+    if job.lock().unwrap().cancel {
+        return Err(CANCELLED.to_string());
+    }
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -109,6 +134,7 @@ fn run_impl(cmd: &mut Command, job: &SharedJob, capture_stdout: bool) -> Result<
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start {program}: {e}"))?;
+    job.lock().unwrap().pid = Some(child.id());
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
 
@@ -127,11 +153,23 @@ fn run_impl(cmd: &mut Command, job: &SharedJob, capture_stdout: bool) -> Result<
         read_stream(stderr, err_buf, err_job, true, false);
     });
 
-    let status = child
-        .wait()
-        .map_err(|e| format!("Failed while running {program}: {e}"))?;
+    let status = loop {
+        if job.lock().unwrap().cancel {
+            let _ = child.kill();
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(error) => return Err(format!("Failed while running {program}: {error}")),
+        }
+    };
     let _ = out_thread.join();
     let _ = err_thread.join();
+    let cancelled = job.lock().unwrap().cancel;
+    job.lock().unwrap().pid = None;
+    if cancelled {
+        return Err(CANCELLED.to_string());
+    }
 
     let stdout = String::from_utf8_lossy(&out_shared.lock().unwrap()).to_string();
     let stderr = String::from_utf8_lossy(&err_shared.lock().unwrap()).to_string();
@@ -226,6 +264,21 @@ fn handle_line(bytes: &[u8], job: &SharedJob, capture_output: bool, is_stdout: b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancels_a_running_command() {
+        let job = new_job(JobKind::Extract, "cancel test");
+        let worker_job = job.clone();
+        let worker = thread::spawn(move || {
+            let mut command = Command::new("sh");
+            command.args(["-c", "sleep 5"]);
+            run_command(&mut command, &worker_job)
+        });
+        thread::sleep(Duration::from_millis(150));
+        cancel(&job);
+        let result = worker.join().unwrap();
+        assert_eq!(result.unwrap_err(), CANCELLED);
+    }
 
     #[test]
     fn parses_7z_progress_lines() {

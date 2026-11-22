@@ -118,6 +118,38 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn begin_preview_drag(&mut self, y: f32, window: &Window, cx: &mut Context<Self>) {
+        self.preview_drag = Some(crate::state::PreviewSplitDrag {
+            start_y: y,
+            start_ratio: self.preview_ratio,
+            height: f32::from(window.bounds().size.height).max(1.0),
+        });
+        cx.notify();
+    }
+
+    fn preview_move(&mut self, y: f32, cx: &mut Context<Self>) {
+        let Some(drag) = self.preview_drag else {
+            return;
+        };
+        self.preview_ratio =
+            (drag.start_ratio + (drag.start_y - y) / drag.height).clamp(0.15, 0.75);
+        cx.notify();
+    }
+
+    fn save_preview_ratio(&mut self) {
+        self.settings.preview_ratio = self.preview_ratio;
+        if let Err(error) = self.settings.save() {
+            self.settings_error = Some(error);
+        }
+    }
+
+    pub(crate) fn reset_preview_ratio(&mut self, cx: &mut Context<Self>) {
+        self.preview_ratio = 0.32;
+        self.preview_drag = None;
+        self.save_preview_ratio();
+        cx.notify();
+    }
+
     pub(crate) fn begin_hscroll_drag(&mut self, drag: HScrollDrag, cx: &mut Context<Self>) {
         self.hscroll_drag = Some(drag);
         cx.notify();
@@ -143,6 +175,10 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.preview_drag.is_some() {
+            self.preview_move(f32::from(event.position.y), cx);
+            return;
+        }
         if self.split_drag.is_some() {
             self.split_move(f32::from(event.position.x), cx);
             return;
@@ -162,6 +198,11 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.preview_drag.take().is_some() {
+            self.save_preview_ratio();
+            cx.notify();
+            return;
+        }
         if self.split_drag.take().is_some() {
             self.save_split();
             cx.notify();

@@ -3,7 +3,7 @@ use std::process::Command;
 use std::sync::mpsc::{self, TryRecvError};
 use std::time::Duration;
 
-use gpui::{Context, Timer};
+use gpui::{ClipboardItem, Context, Timer};
 
 use crate::archive::{self, Child, Format};
 use crate::preview::{self, PreviewContent};
@@ -196,6 +196,26 @@ impl AppView {
         else {
             return;
         };
+        if archive::is_archive_name(&child.name) {
+            let parent = dest.parent().map(PathBuf::from).unwrap_or(dest);
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0);
+            let dest = parent.join(format!("nested-{stamp}"));
+            self.execute_action(
+                PendingAction::OpenNested {
+                    archive,
+                    format,
+                    dest,
+                    raw_name,
+                    display_name,
+                },
+                None,
+                cx,
+            );
+            return;
+        }
         self.execute_action(
             PendingAction::Open {
                 archive,
@@ -230,6 +250,60 @@ impl AppView {
         ))
     }
 
+    pub(crate) fn open_archive_in_new_tab(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let parent = path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.fs.path.clone());
+        self.new_tab(cx);
+        self.fs = crate::state::FsState::new(parent);
+        self.open_archive(path, cx);
+    }
+
+    pub(crate) fn toggle_code_wrap(&mut self, cx: &mut Context<Self>) {
+        self.code_wrap = !self.code_wrap;
+        cx.notify();
+    }
+
+    pub(crate) fn open_url_external(&mut self, url: String, cx: &mut Context<Self>) {
+        if !(url.starts_with("http://")
+            || url.starts_with("https://")
+            || url.starts_with("mailto:")
+            || url.starts_with("file:"))
+        {
+            self.set_message("Unsupported link scheme", true);
+            cx.notify();
+            return;
+        }
+        let mut result = Command::new("xdg-open").arg(&url).spawn();
+        if result.is_err() {
+            result = Command::new("gio").arg("open").arg(&url).spawn();
+        }
+        match result {
+            Ok(_) => self.set_message(format!("Opened {url}"), false),
+            Err(error) => self.set_message(format!("Could not open {url}: {error}"), true),
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn copy_preview(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = self
+            .preview
+            .as_ref()
+            .and_then(|preview| preview.content.copy_text())
+        else {
+            return;
+        };
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        self.set_message("Copied preview text", false);
+        cx.notify();
+    }
+
+    pub(crate) fn set_image_zoom(&mut self, delta: f32, cx: &mut Context<Self>) {
+        self.image_zoom = (self.image_zoom + delta).clamp(0.1, 8.0);
+        cx.notify();
+    }
+
     pub(crate) fn show_preview(
         &mut self,
         path: Option<PathBuf>,
@@ -239,6 +313,9 @@ impl AppView {
     ) {
         self.preview_generation += 1;
         self.context_menu = None;
+        if matches!(content, PreviewContent::Image { .. }) {
+            self.image_zoom = 1.0;
+        }
         self.preview = Some(PreviewView {
             title,
             path,

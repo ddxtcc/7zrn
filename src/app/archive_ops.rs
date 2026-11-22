@@ -17,6 +17,7 @@ impl AppView {
         names: Vec<OsString>,
         base: PathBuf,
         name: String,
+        options: archive::CreateOptions,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         if names.is_empty() {
@@ -58,9 +59,18 @@ impl AppView {
             JobKind::Create,
             label,
             move |job| {
-                let mut cmd = archive::create_command(&path, format, &base, &names)?;
+                let mut cmd = archive::create_command(&path, format, &base, &names, &options)?;
                 job::run_command(&mut cmd, &job)?;
-                Ok(JobPayload::Created { archive: path })
+                let created = if path.exists() {
+                    path.clone()
+                } else {
+                    let file_name = path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("archive");
+                    path.with_file_name(format!("{file_name}.001"))
+                };
+                Ok(JobPayload::Created { archive: created })
             },
             cx,
         );

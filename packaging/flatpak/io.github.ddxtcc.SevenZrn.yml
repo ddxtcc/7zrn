@@ -1,0 +1,57 @@
+app-id: io.github.ddxtcc.SevenZrn
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: sevenzrn
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=/run/media
+  - --filesystem=/media
+  - --filesystem=/mnt
+  - --talk-name=org.freedesktop.portal.Desktop
+modules:
+  - name: 7zip
+    buildsystem: simple
+    build-commands:
+      - 'make -C CPP/7zip/Bundles/Alone2 -f makefile.gcc -j "${FLATPAK_BUILDER_N_JOBS:-1}" CFLAGS_WARN_WALL="-Wall -Wextra"'
+      - install -Dm755 CPP/7zip/Bundles/Alone2/_o/7zz /app/bin/7zz
+      - ln -sf 7zz /app/bin/7z
+      - install -Dm644 DOC/License.txt /app/share/licenses/io.github.ddxtcc.SevenZrn/7zip-License.txt
+      - install -Dm644 DOC/unRarLicense.txt /app/share/licenses/io.github.ddxtcc.SevenZrn/7zip-unRarLicense.txt
+    sources:
+      - type: archive
+        url: https://github.com/ip7z/7zip/releases/download/26.06/7z2606-src.tar.xz
+        sha256: a4e374c8f864f51df48c2cfd0e1413ec3b2ea030deae852d6a655402ebb61ac4
+  - name: sevenzrn
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/sevenzrn/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo build --release --locked
+      - install -Dm755 target/release/sevenzrn /app/bin/sevenzrn
+      - install -Dm644 packaging/flatpak/io.github.ddxtcc.SevenZrn.desktop /app/share/applications/io.github.ddxtcc.SevenZrn.desktop
+      - install -Dm644 packaging/flatpak/io.github.ddxtcc.SevenZrn.metainfo.xml /app/share/metainfo/io.github.ddxtcc.SevenZrn.metainfo.xml
+      - install -Dm644 assets/icons/hicolor/scalable/apps/7zrn.svg /app/share/icons/hicolor/scalable/apps/io.github.ddxtcc.SevenZrn.svg
+      - |
+        for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do
+          install -Dm644 "assets/icons/hicolor/$size/apps/7zrn.png" "/app/share/icons/hicolor/$size/apps/io.github.ddxtcc.SevenZrn.png"
+        done
+      - install -Dm644 LICENSE /app/share/licenses/io.github.ddxtcc.SevenZrn/LICENSE
+    sources:
+      - cargo-sources.json
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - .package
+          - dist
+          - target

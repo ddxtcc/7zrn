@@ -63,6 +63,7 @@ impl AppView {
     }
 
     pub(crate) fn sync_filter_from_edit(&mut self, cx: &mut Context<Self>) {
+        let mut search = false;
         if let Some(edit) = &self.edit {
             match edit.target {
                 EditTarget::FsFilter => {
@@ -73,10 +74,23 @@ impl AppView {
                     self.archive.filter = edit.text.clone();
                     self.archive.reset_active();
                 }
+                EditTarget::Search => {
+                    search = true;
+                }
+                EditTarget::Palette => {
+                    if let Some(Modal::Palette { query, selected }) = &mut self.modal {
+                        *query = edit.text.clone();
+                        *selected = 0;
+                    }
+                }
                 _ => {}
             }
         }
-        cx.notify();
+        if search {
+            self.run_search(cx);
+        } else {
+            cx.notify();
+        }
     }
 
     pub(crate) fn write_edit_text_to_target(&mut self, target: EditTarget, text: String) {
@@ -84,6 +98,21 @@ impl AppView {
             EditTarget::NewName => {
                 if let Some(Modal::NewArchive { name, .. }) = &mut self.modal {
                     *name = text;
+                }
+            }
+            EditTarget::NewPassword => {
+                if let Some(Modal::NewArchive { password, .. }) = &mut self.modal {
+                    *password = text;
+                }
+            }
+            EditTarget::NewSplit => {
+                if let Some(Modal::NewArchive { split, .. }) = &mut self.modal {
+                    *split = text;
+                }
+            }
+            EditTarget::NewExclude => {
+                if let Some(Modal::NewArchive { excludes, .. }) = &mut self.modal {
+                    *excludes = text;
                 }
             }
             EditTarget::ExtractDest => {
@@ -94,6 +123,21 @@ impl AppView {
             EditTarget::Password => {
                 if let Some(Modal::Password { password, .. }) = &mut self.modal {
                     *password = text;
+                }
+            }
+            EditTarget::ArchiveEdit => {
+                if let Some(Modal::ArchiveEdit { value, .. }) = &mut self.modal {
+                    *value = text;
+                }
+            }
+            EditTarget::Search => {
+                if let Some(Modal::Search { query, .. }) = &mut self.modal {
+                    *query = text;
+                }
+            }
+            EditTarget::Palette => {
+                if let Some(Modal::Palette { query, .. }) = &mut self.modal {
+                    *query = text;
                 }
             }
             _ => {}
@@ -127,7 +171,15 @@ impl AppView {
                     self.archive.filter.clear();
                     self.archive.reset_active();
                 }
-                EditTarget::NewName | EditTarget::ExtractDest | EditTarget::Password => {
+                EditTarget::NewName
+                | EditTarget::NewPassword
+                | EditTarget::NewSplit
+                | EditTarget::NewExclude
+                | EditTarget::ExtractDest
+                | EditTarget::Password
+                | EditTarget::ArchiveEdit
+                | EditTarget::Search
+                | EditTarget::Palette => {
                     self.write_edit_text_to_target(edit.target, edit.text);
                 }
                 EditTarget::FsPath => {}
@@ -138,6 +190,25 @@ impl AppView {
 
         if key == "enter" {
             self.commit_edit(window, cx);
+            return true;
+        }
+        if key == "tab" && self.modal.is_some() {
+            self.focus_modal_field(window, cx);
+            return true;
+        }
+        let selection_target = self.edit.as_ref().map(|edit| edit.target);
+        if (key == "up" || key == "down")
+            && matches!(
+                selection_target,
+                Some(EditTarget::Search | EditTarget::Palette)
+            )
+        {
+            let delta = if key == "down" { 1 } else { -1 };
+            if selection_target == Some(EditTarget::Search) {
+                self.move_search_selection(delta, cx);
+            } else {
+                self.move_palette_selection(delta, cx);
+            }
             return true;
         }
 
@@ -234,9 +305,24 @@ impl AppView {
             EditTarget::FsPath => {
                 self.navigate_fs_input(&edit.text, window, cx);
             }
-            EditTarget::NewName | EditTarget::ExtractDest | EditTarget::Password => {
+            EditTarget::NewName
+            | EditTarget::NewPassword
+            | EditTarget::NewSplit
+            | EditTarget::NewExclude
+            | EditTarget::ExtractDest
+            | EditTarget::Password
+            | EditTarget::ArchiveEdit => {
                 self.write_edit_text_to_target(edit.target, edit.text);
-                self.submit_modal(cx);
+                self.submit_modal(window, cx);
+            }
+            EditTarget::Search => {
+                self.write_edit_text_to_target(edit.target, edit.text);
+                self.run_search(cx);
+            }
+            EditTarget::Palette => {
+                self.write_edit_text_to_target(edit.target, edit.text);
+                self.update_palette_selection();
+                cx.notify();
             }
         }
     }
@@ -323,7 +409,7 @@ impl AppView {
             }
             match event.keystroke.key.as_str() {
                 "escape" => self.close_modal_with_escape(cx),
-                "enter" => self.submit_modal(cx),
+                "enter" => self.submit_modal(window, cx),
                 "tab" => self.focus_modal_field(window, cx),
                 _ => {}
             }
@@ -335,6 +421,26 @@ impl AppView {
         let alt = event.keystroke.modifiers.alt;
         let shift = event.keystroke.modifiers.shift;
 
+        if control && shift && key == "f" {
+            self.open_search_modal(window, cx);
+            return;
+        }
+        if control && shift && key == "p" {
+            self.open_palette_modal(window, cx);
+            return;
+        }
+        if control && shift && key == "t" {
+            self.new_tab(cx);
+            return;
+        }
+        if control && key == "w" {
+            self.close_tab(self.active_tab, cx);
+            return;
+        }
+        if control && key == "tab" {
+            self.cycle_tab(!shift, cx);
+            return;
+        }
         if control && key == "q" {
             cx.quit();
             return;
@@ -430,10 +536,20 @@ impl AppView {
                 Pane::Fs => self.preview_fs_active(cx),
                 Pane::Archive => self.preview_archive_active(cx),
             },
+            "f2" => {
+                if self.focused == Pane::Archive {
+                    self.open_rename_modal(window, cx);
+                }
+            }
             "f5" => match self.focused {
                 Pane::Fs => self.refresh_fs(cx),
                 Pane::Archive => self.refresh_archive(cx),
             },
+            "f7" => {
+                if self.focused == Pane::Archive {
+                    self.open_new_folder_modal(window, cx);
+                }
+            }
             _ => {}
         }
     }

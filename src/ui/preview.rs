@@ -32,33 +32,13 @@ impl AppView {
                 if syntax == Syntax::Plain {
                     plain_text(text, theme)
                 } else {
-                    code_view(text, syntax, theme, true)
+                    code_view(text, syntax, theme, !self.code_wrap, self.code_wrap)
                 }
             }
-            PreviewContent::Markdown(blocks) => markdown_view(blocks, theme),
-            PreviewContent::Image => {
-                if let Some(path) = &preview.path {
-                    div()
-                        .w_full()
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            img(path.clone())
-                                .w_full()
-                                .h_full()
-                                .object_fit(ObjectFit::Contain),
-                        )
-                        .into_any_element()
-                } else {
-                    div()
-                        .text_sm()
-                        .text_color(rgb(theme.muted))
-                        .child("Image not available")
-                        .into_any_element()
-                }
+            PreviewContent::Markdown { blocks, .. } => {
+                markdown_view(blocks, theme, preview.path.as_deref(), cx)
             }
+            PreviewContent::Image { path } => image_view(path, self.image_zoom),
             PreviewContent::Unsupported(message) => div()
                 .text_sm()
                 .text_color(rgb(theme.muted))
@@ -104,6 +84,43 @@ impl AppView {
                     .child(language),
             );
         }
+        if matches!(preview.content, PreviewContent::Image { .. }) {
+            header = header
+                .child(self.btn("image-zoom-out", "−", true, cx, |this, _, cx| {
+                    this.set_image_zoom(-0.25, cx)
+                }))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(rgb(theme.muted))
+                        .child(format!("{}%", (self.image_zoom * 100.0).round() as i32)),
+                )
+                .child(self.btn("image-zoom-in", "+", true, cx, |this, _, cx| {
+                    this.set_image_zoom(0.25, cx)
+                }));
+        }
+        let is_code = match &preview.content {
+            PreviewContent::Text(text) => {
+                let path = preview.path.as_deref().unwrap_or_else(|| Path::new(""));
+                Syntax::detect_with_text(path, text) != Syntax::Plain
+            }
+            _ => false,
+        };
+        if is_code {
+            header = header.child(self.btn(
+                "preview-wrap",
+                if self.code_wrap { "No wrap" } else { "Wrap" },
+                true,
+                cx,
+                |this, _, cx| this.toggle_code_wrap(cx),
+            ));
+        }
+        if preview.content.copy_text().is_some() {
+            header = header.child(self.btn("preview-copy", "Copy", true, cx, |this, _, cx| {
+                this.copy_preview(cx)
+            }));
+        }
         header = header
             .child(
                 self.btn("preview-open", "Open", has_path, cx, |this, _, cx| {
@@ -114,13 +131,34 @@ impl AppView {
                 this.close_preview(cx)
             }));
         div()
-            .h(gpui::relative(0.32))
+            .h(gpui::relative(self.preview_ratio))
             .flex_none()
             .flex()
             .flex_col()
             .border_t_1()
             .border_color(rgb(theme.border))
             .bg(rgb(theme.panel))
+            .child(
+                div()
+                    .id("preview-splitter")
+                    .h(px(5.))
+                    .flex_none()
+                    .w_full()
+                    .cursor(gpui::CursorStyle::ResizeUpDown)
+                    .bg(rgb(theme.border))
+                    .hover(move |style| style.bg(rgb(theme.accent)))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
+                            this.begin_preview_drag(f32::from(event.position.y), window, cx);
+                        }),
+                    )
+                    .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
+                        if event.click_count() >= 2 {
+                            this.reset_preview_ratio(cx);
+                        }
+                    })),
+            )
             .child(header)
             .child(
                 div()
@@ -148,7 +186,7 @@ fn plain_text(text: &str, theme: Theme) -> AnyElement {
 
 fn preview_language(preview: &PreviewView) -> Option<&'static str> {
     match &preview.content {
-        PreviewContent::Markdown(_) => Some("Markdown"),
+        PreviewContent::Markdown { .. } => Some("Markdown"),
         PreviewContent::Text(text) => {
             let path = preview.path.as_deref().unwrap_or_else(|| Path::new(""));
             let syntax = Syntax::detect_with_text(path, text);
@@ -156,4 +194,28 @@ fn preview_language(preview: &PreviewView) -> Option<&'static str> {
         }
         _ => None,
     }
+}
+
+fn image_view(path: &Path, zoom: f32) -> AnyElement {
+    let dimensions = image::image_dimensions(path).ok();
+    let content = if let Some((width, height)) = dimensions {
+        img(path.to_path_buf())
+            .w(px(width as f32 * zoom))
+            .h(px(height as f32 * zoom))
+            .object_fit(ObjectFit::Fill)
+            .into_any_element()
+    } else {
+        img(path.to_path_buf())
+            .w_full()
+            .h_full()
+            .object_fit(ObjectFit::Contain)
+            .into_any_element()
+    };
+    div()
+        .id("image-preview-scroll")
+        .w_full()
+        .h_full()
+        .overflow_scroll()
+        .child(content)
+        .into_any_element()
 }

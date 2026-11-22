@@ -50,6 +50,12 @@ impl Format {
         if name.ends_with(".tar.zst") || name.ends_with(".tzst") {
             return Format::TarZst;
         }
+        if name.ends_with(".7z.001") {
+            return Format::SevenZ;
+        }
+        if name.ends_with(".zip.001") {
+            return Format::Zip;
+        }
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -226,6 +232,8 @@ pub fn is_archive_name(name: &str) -> bool {
         || lower.ends_with(".tbz2")
         || lower.ends_with(".txz")
         || lower.ends_with(".tzst")
+        || lower.ends_with(".7z.001")
+        || lower.ends_with(".zip.001")
     {
         return true;
     }

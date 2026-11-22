@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use gpui::{ScrollStrategy, UniformListScrollHandle};
 
-use crate::archive::{self, Child, Format, NewFormat};
+use crate::archive::{self, ArchiveEdit, Child, Format, NewFormat};
 use crate::fsops::{self, FsEntry};
 use crate::preview::PreviewContent;
 
@@ -39,8 +39,34 @@ pub(crate) enum EditTarget {
     FsFilter,
     ArcFilter,
     NewName,
+    NewPassword,
+    NewSplit,
+    NewExclude,
     ExtractDest,
     Password,
+    ArchiveEdit,
+    Search,
+    Palette,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SearchScope {
+    Fs,
+    Archive,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum SearchHit {
+    Fs {
+        path: PathBuf,
+        label: String,
+        is_dir: bool,
+    },
+    Archive {
+        key: String,
+        label: String,
+        is_dir: bool,
+    },
 }
 
 pub(crate) struct EditState {
@@ -367,6 +393,18 @@ pub(crate) enum PendingAction {
         raw_names: Vec<String>,
         display_names: Vec<String>,
     },
+    Edit {
+        archive: PathBuf,
+        format: Format,
+        edit: ArchiveEdit,
+    },
+    OpenNested {
+        archive: PathBuf,
+        format: Format,
+        dest: PathBuf,
+        raw_name: String,
+        display_name: String,
+    },
 }
 
 impl PendingAction {
@@ -378,6 +416,8 @@ impl PendingAction {
             PendingAction::Add { archive, .. } => archive,
             PendingAction::Open { archive, .. } => archive,
             PendingAction::Delete { archive, .. } => archive,
+            PendingAction::Edit { archive, .. } => archive,
+            PendingAction::OpenNested { archive, .. } => archive,
         }
     }
 
@@ -389,8 +429,17 @@ impl PendingAction {
             PendingAction::Add { .. } => "add files to this archive",
             PendingAction::Open { .. } => "open a file from this archive",
             PendingAction::Delete { .. } => "delete entries from this archive",
+            PendingAction::Edit { .. } => "edit this archive",
+            PendingAction::OpenNested { .. } => "open this archive",
         }
     }
+}
+
+pub(crate) enum ArchiveEditKind {
+    Rename { from: String },
+    Copy { keys: Vec<String> },
+    Move { keys: Vec<String> },
+    NewFolder,
 }
 
 pub(crate) enum Modal {
@@ -399,6 +448,10 @@ pub(crate) enum Modal {
         names: Vec<OsString>,
         base: PathBuf,
         name: String,
+        compression: u8,
+        password: String,
+        split: String,
+        excludes: String,
         error: Option<String>,
     },
     Extract {
@@ -411,6 +464,24 @@ pub(crate) enum Modal {
     DeleteConfirm {
         raw_names: Vec<String>,
         display_names: Vec<String>,
+    },
+    ArchiveEdit {
+        title: String,
+        kind: ArchiveEditKind,
+        value: String,
+        error: Option<String>,
+    },
+    Search {
+        scope: SearchScope,
+        query: String,
+        content: bool,
+        results: Vec<SearchHit>,
+        selected: usize,
+        error: Option<String>,
+    },
+    Palette {
+        query: String,
+        selected: usize,
     },
     Info {
         title: String,
@@ -430,6 +501,31 @@ pub(crate) enum Modal {
 pub(crate) struct Message {
     pub(crate) text: String,
     pub(crate) error: bool,
+}
+
+pub(crate) struct Tab {
+    pub(crate) title: String,
+    pub(crate) fs: Option<FsState>,
+    pub(crate) archive: Option<ArchiveState>,
+    pub(crate) focused: Pane,
+}
+
+impl Tab {
+    pub(crate) fn empty() -> Self {
+        Self {
+            title: String::new(),
+            fs: None,
+            archive: None,
+            focused: Pane::Fs,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PreviewSplitDrag {
+    pub(crate) start_y: f32,
+    pub(crate) start_ratio: f32,
+    pub(crate) height: f32,
 }
 
 pub(crate) struct PreviewView {

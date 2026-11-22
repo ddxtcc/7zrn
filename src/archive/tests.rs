@@ -57,6 +57,8 @@ fn detects_compound_extensions() {
     assert_eq!(Format::detect(Path::new("x.TGZ")), Format::TarGz);
     assert_eq!(Format::detect(Path::new("x.tar.zst")), Format::TarZst);
     assert_eq!(Format::detect(Path::new("x.zip")), Format::Zip);
+    assert_eq!(Format::detect(Path::new("x.7z.001")), Format::SevenZ);
+    assert_eq!(Format::detect(Path::new("x.zip.001")), Format::Zip);
     assert_eq!(Format::detect(Path::new("x.bin")), Format::Other);
 }
 
@@ -119,6 +121,7 @@ fn recognizes_archive_extensions() {
     assert!(is_archive_name("foo.zip"));
     assert!(is_archive_name("foo.tar.gz"));
     assert!(is_archive_name("FOO.7Z"));
+    assert!(is_archive_name("foo.7z.001"));
     assert!(!is_archive_name("foo.txt"));
     assert!(!is_archive_name("foo"));
 }
@@ -150,7 +153,7 @@ fn backend_roundtrip_for_7z_zip_and_targz() {
     for (name, format) in formats {
         let output = root.join(name);
         let names = vec![OsString::from("a.txt"), OsString::from("sub")];
-        run(create_command(&output, format, &source, &names).unwrap());
+        run(create_command(&output, format, &source, &names, &CreateOptions::default()).unwrap());
         let listing = list_archive(&output, None).unwrap();
         let detected = Format::detect(&output);
         let names: Vec<&str> = listing
@@ -212,6 +215,151 @@ fn run_capture_test(cmd: &mut Command) {
         "command failed: {cmd:?}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn edits_archive_entries() {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("7zrn-edit-{}-{stamp}", std::process::id()));
+    let source = root.join("src");
+    std::fs::create_dir_all(source.join("sub")).unwrap();
+    std::fs::write(source.join("a.txt"), "alpha").unwrap();
+    std::fs::write(source.join("sub/b.txt"), "beta").unwrap();
+    let job = crate::job::new_job(crate::job::JobKind::Modify, "edit test");
+    for (name, format) in [
+        ("edit.7z", NewFormat::SevenZ),
+        ("edit.zip", NewFormat::Zip),
+        ("edit.tar.gz", NewFormat::TarGz),
+    ] {
+        let archive = root.join(name);
+        let names = vec![OsString::from("a.txt"), OsString::from("sub")];
+        run(create_command(&archive, format, &source, &names, &CreateOptions::default()).unwrap());
+        let detected = Format::detect(&archive);
+        apply_edit(
+            &archive,
+            detected,
+            ArchiveEdit::Rename {
+                from: "sub/b.txt".into(),
+                to: "sub/c.txt".into(),
+            },
+            None,
+            &job,
+        )
+        .unwrap();
+        let listing = list_archive(&archive, None).unwrap();
+        let paths: Vec<&str> = listing
+            .entries
+            .iter()
+            .map(|entry| entry.display_path.as_str())
+            .collect();
+        assert!(paths.contains(&"sub/c.txt"), "{name}: {paths:?}");
+        assert!(!paths.contains(&"sub/b.txt"), "{name}: {paths:?}");
+
+        apply_edit(
+            &archive,
+            detected,
+            ArchiveEdit::Copy {
+                keys: vec!["a.txt".into()],
+                dest: "sub".into(),
+            },
+            None,
+            &job,
+        )
+        .unwrap();
+        let listing = list_archive(&archive, None).unwrap();
+        assert!(
+            listing
+                .entries
+                .iter()
+                .any(|entry| entry.display_path == "sub/a.txt"),
+            "{name}: copy failed"
+        );
+
+        apply_edit(
+            &archive,
+            detected,
+            ArchiveEdit::Move {
+                keys: vec!["a.txt".into()],
+                dest: "moved".into(),
+            },
+            None,
+            &job,
+        )
+        .unwrap();
+        let listing = list_archive(&archive, None).unwrap();
+        let paths: Vec<&str> = listing
+            .entries
+            .iter()
+            .map(|entry| entry.display_path.as_str())
+            .collect();
+        assert!(paths.contains(&"moved/a.txt"), "{name}: {paths:?}");
+        assert!(!paths.contains(&"a.txt"), "{name}: {paths:?}");
+
+        apply_edit(
+            &archive,
+            detected,
+            ArchiveEdit::NewFolder {
+                path: "empty/nested".into(),
+            },
+            None,
+            &job,
+        )
+        .unwrap();
+        let listing = list_archive(&archive, None).unwrap();
+        assert!(
+            listing
+                .entries
+                .iter()
+                .any(|entry| entry.is_dir && entry.display_path == "empty/nested"),
+            "{name}: new folder failed"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn create_options_apply_password_and_excludes() {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("7zrn-options-{}-{stamp}", std::process::id()));
+    let source = root.join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("keep.txt"), "keep").unwrap();
+    std::fs::write(source.join("drop.tmp"), "drop").unwrap();
+    let archive = root.join("options.7z");
+    let options = CreateOptions {
+        compression: 9,
+        password: Some("secret".into()),
+        split: None,
+        excludes: vec!["*.tmp".into()],
+    };
+    run(create_command(
+        &archive,
+        NewFormat::SevenZ,
+        &source,
+        &[OsString::from(".")],
+        &options,
+    )
+    .unwrap());
+    let listing = list_archive(&archive, Some("secret")).unwrap();
+    assert!(
+        listing
+            .entries
+            .iter()
+            .any(|entry| entry.display_path == "keep.txt")
+    );
+    assert!(
+        !listing
+            .entries
+            .iter()
+            .any(|entry| entry.display_path == "drop.tmp")
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]

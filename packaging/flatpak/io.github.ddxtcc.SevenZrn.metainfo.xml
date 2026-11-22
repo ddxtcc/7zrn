@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ddxtcc.SevenZrn</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>7zrn</name>
+  <summary>Native GPUI archive manager powered by 7-Zip and tar</summary>
+  <developer id="io.github.ddxtcc">
+    <name>ddxtcc</name>
+  </developer>
+  <description>
+    <p>
+      7zrn is a native GPUI archive manager for Linux. It browses local files
+      and archives in a dual-pane interface and drives the 7-Zip and tar
+      command line tools for archive operations.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Dual-pane file and archive browsing</li>
+      <li>Create, extract, test, and update 7z and zip archives</li>
+      <li>Extract tar, compressed tar, and single stream archives</li>
+      <li>Password protected archives</li>
+      <li>Inline text, Markdown, image, and syntax-highlighted previews</li>
+      <li>Drag and drop between panes</li>
+      <li>Six color themes</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.ddxtcc.SevenZrn.desktop</launchable>
+  <url type="homepage">https://github.com/ddxtcc/7zrn</url>
+  <url type="bugtracker">https://github.com/ddxtcc/7zrn/issues</url>
+  <url type="vcs-browser">https://github.com/ddxtcc/7zrn</url>
+  <categories>
+    <category>Utility</category>
+    <category>Archiving</category>
+  </categories>
+  <keywords>
+    <keyword>archive</keyword>
+    <keyword>compress</keyword>
+    <keyword>extract</keyword>
+    <keyword>7z</keyword>
+    <keyword>zip</keyword>
+    <keyword>tar</keyword>
+    <keyword>rar</keyword>
+  </keywords>
+  <provides>
+    <binary>sevenzrn</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-22"/>
+  </releases>
+</component>

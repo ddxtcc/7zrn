@@ -5,6 +5,14 @@
 - Rendered Markdown previews with headings, lists, tables, quotes, links, and fenced code
 - Code previews with line numbers, language badges, tab expansion, and expanded syntax support
 - Shebang and filename detection for extensionless scripts and common build files
+- Archive rename, move, copy, and folder creation
+- Tabs, session restore, and nested archive opening
+- Recursive name and content search, plus a command palette
+- Cancelable jobs with an operation log
+- Archive creation compression, password, split, and exclude options
+- Archive properties, PDF previews, image zoom, clickable Markdown links, local images, code wrapping, and copy
+- Resizable and persisted preview pane
+- AUR VCS package and Flatpak packaging
 
 ## 0.1.0 - 2026-11-22
 

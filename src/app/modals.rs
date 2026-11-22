@@ -6,6 +6,7 @@ use std::time::Duration;
 use gpui::{ClipboardItem, Context, Timer, Window};
 use std::ffi::OsString;
 
+use crate::archive;
 use crate::archive::NewFormat;
 use crate::state::*;
 use crate::text::replace_archive_extension;
@@ -43,6 +44,10 @@ impl AppView {
             names,
             base,
             name: name.clone(),
+            compression: 5,
+            password: String::new(),
+            split: String::new(),
+            excludes: String::new(),
             error: None,
         });
         self.begin_edit(EditTarget::NewName, name, window, cx);
@@ -106,9 +111,17 @@ impl AppView {
         }
     }
 
-    pub(crate) fn submit_modal(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn submit_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(edit) = self.edit.take() {
             self.write_edit_text_to_target(edit.target, edit.text);
+        }
+        if matches!(self.modal, Some(Modal::Search { .. })) {
+            self.submit_search(cx);
+            return;
+        }
+        if matches!(self.modal, Some(Modal::Palette { .. })) {
+            self.submit_palette(window, cx);
+            return;
         }
         let Some(mut modal) = self.modal.take() else {
             return;
@@ -119,10 +132,31 @@ impl AppView {
                 names,
                 base,
                 name,
+                compression,
+                password,
+                split,
+                excludes,
                 error,
             } => {
-                match self.start_new_archive(*format, names.clone(), base.clone(), name.clone(), cx)
-                {
+                let options = crate::archive::CreateOptions {
+                    compression: *compression,
+                    password: (!password.is_empty()).then(|| password.clone()),
+                    split: (!split.trim().is_empty()).then(|| split.trim().to_string()),
+                    excludes: excludes
+                        .split([',', '\n'])
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                };
+                match self.start_new_archive(
+                    *format,
+                    names.clone(),
+                    base.clone(),
+                    name.clone(),
+                    options,
+                    cx,
+                ) {
                     Ok(()) => {}
                     Err(message) => {
                         *error = Some(message);
@@ -169,6 +203,87 @@ impl AppView {
             } => {
                 self.start_delete(raw_names.clone(), display_names.clone(), cx);
             }
+            Modal::ArchiveEdit {
+                kind, value, error, ..
+            } => {
+                let value = value.trim().to_string();
+                if value.is_empty() {
+                    *error = Some("Enter a value".into());
+                    let text = value;
+                    let cursor = text.len();
+                    self.modal = Some(modal);
+                    self.edit = Some(EditState {
+                        target: EditTarget::ArchiveEdit,
+                        text,
+                        cursor,
+                    });
+                } else {
+                    let Some(archive) = self.archive.archive.clone() else {
+                        self.modal = None;
+                        self.set_message("Open an archive first", true);
+                        cx.notify();
+                        return;
+                    };
+                    let Some(format) = self.archive.format else {
+                        self.modal = None;
+                        self.set_message("Open an archive first", true);
+                        cx.notify();
+                        return;
+                    };
+                    let edit = match kind {
+                        ArchiveEditKind::Rename { from } => {
+                            if value.contains('/') {
+                                *error = Some("Use a file name without a path".into());
+                                let text = value;
+                                let cursor = text.len();
+                                self.modal = Some(modal);
+                                self.edit = Some(EditState {
+                                    target: EditTarget::ArchiveEdit,
+                                    text,
+                                    cursor,
+                                });
+                                cx.notify();
+                                return;
+                            }
+                            let parent = from
+                                .rsplit_once('/')
+                                .map(|(parent, _)| parent)
+                                .unwrap_or("");
+                            let to = if parent.is_empty() {
+                                value.clone()
+                            } else {
+                                format!("{parent}/{value}")
+                            };
+                            archive::ArchiveEdit::Rename {
+                                from: from.clone(),
+                                to,
+                            }
+                        }
+                        ArchiveEditKind::Copy { keys } => archive::ArchiveEdit::Copy {
+                            keys: keys.clone(),
+                            dest: value.clone(),
+                        },
+                        ArchiveEditKind::Move { keys } => archive::ArchiveEdit::Move {
+                            keys: keys.clone(),
+                            dest: value.clone(),
+                        },
+                        ArchiveEditKind::NewFolder => archive::ArchiveEdit::NewFolder {
+                            path: value.clone(),
+                        },
+                    };
+                    self.modal = None;
+                    self.edit = None;
+                    self.execute_action(
+                        PendingAction::Edit {
+                            archive,
+                            format,
+                            edit,
+                        },
+                        None,
+                        cx,
+                    );
+                }
+            }
             Modal::Password {
                 password,
                 error,
@@ -191,7 +306,85 @@ impl AppView {
                     self.execute_action(action, Some(password), cx);
                 }
             }
-            Modal::Info { .. } | Modal::Settings | Modal::Help => {}
+            Modal::Search { .. }
+            | Modal::Palette { .. }
+            | Modal::Info { .. }
+            | Modal::Settings
+            | Modal::Help => {}
+        }
+        cx.notify();
+    }
+
+    fn archive_edit_modal(
+        &mut self,
+        title: &str,
+        kind: ArchiveEditKind,
+        value: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.modal = Some(Modal::ArchiveEdit {
+            title: title.to_string(),
+            kind,
+            value: value.clone(),
+            error: None,
+        });
+        self.begin_edit(EditTarget::ArchiveEdit, value, window, cx);
+    }
+
+    pub(crate) fn open_rename_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(from) = self.arc_action_keys().into_iter().next() else {
+            self.set_message("Select an entry to rename", true);
+            cx.notify();
+            return;
+        };
+        let name = from.rsplit('/').next().unwrap_or(&from).to_string();
+        self.archive_edit_modal(
+            "Rename entry",
+            ArchiveEditKind::Rename { from },
+            name,
+            window,
+            cx,
+        );
+    }
+
+    pub(crate) fn open_copy_move_modal(
+        &mut self,
+        copy: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let keys = self.arc_action_keys();
+        if keys.is_empty() {
+            self.set_message("Select entries first", true);
+            cx.notify();
+            return;
+        }
+        let title = if copy { "Copy entries" } else { "Move entries" };
+        let kind = if copy {
+            ArchiveEditKind::Copy { keys }
+        } else {
+            ArchiveEditKind::Move { keys }
+        };
+        self.archive_edit_modal(title, kind, self.archive.inner.clone(), window, cx);
+    }
+
+    pub(crate) fn open_new_folder_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let value = if self.archive.inner.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", self.archive.inner)
+        };
+        self.archive_edit_modal("New folder", ArchiveEditKind::NewFolder, value, window, cx);
+    }
+
+    pub(crate) fn set_new_compression(&mut self, compression: u8, cx: &mut Context<Self>) {
+        if let Some(Modal::NewArchive {
+            compression: current,
+            ..
+        }) = &mut self.modal
+        {
+            *current = compression;
         }
         cx.notify();
     }
@@ -300,10 +493,31 @@ impl AppView {
     }
 
     pub(crate) fn focus_modal_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(edit) = self.edit.take() {
+            self.write_edit_text_to_target(edit.target, edit.text);
+        }
         match &self.modal {
-            Some(Modal::NewArchive { name, .. }) => {
-                let text = name.clone();
-                self.begin_edit(EditTarget::NewName, text, window, cx);
+            Some(Modal::NewArchive {
+                name,
+                password,
+                split,
+                excludes,
+                ..
+            }) => {
+                let current = self.edit.as_ref().map(|edit| edit.target);
+                let next = match current {
+                    Some(EditTarget::NewName) => EditTarget::NewPassword,
+                    Some(EditTarget::NewPassword) => EditTarget::NewSplit,
+                    Some(EditTarget::NewSplit) => EditTarget::NewExclude,
+                    _ => EditTarget::NewName,
+                };
+                let text = match next {
+                    EditTarget::NewPassword => password.clone(),
+                    EditTarget::NewSplit => split.clone(),
+                    EditTarget::NewExclude => excludes.clone(),
+                    _ => name.clone(),
+                };
+                self.begin_edit(next, text, window, cx);
             }
             Some(Modal::Extract { dest, .. }) => {
                 let text = dest.clone();
@@ -312,6 +526,18 @@ impl AppView {
             Some(Modal::Password { password, .. }) => {
                 let text = password.clone();
                 self.begin_edit(EditTarget::Password, text, window, cx);
+            }
+            Some(Modal::ArchiveEdit { value, .. }) => {
+                let text = value.clone();
+                self.begin_edit(EditTarget::ArchiveEdit, text, window, cx);
+            }
+            Some(Modal::Search { query, .. }) => {
+                let text = query.clone();
+                self.begin_edit(EditTarget::Search, text, window, cx);
+            }
+            Some(Modal::Palette { query, .. }) => {
+                let text = query.clone();
+                self.begin_edit(EditTarget::Palette, text, window, cx);
             }
             _ => {}
         }

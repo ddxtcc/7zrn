@@ -10,13 +10,18 @@ impl AppView {
             "7zrn - archive manager",
             720.0,
             {
-                let rows: [(&str, &str); 30] = [
+                let rows: [(&str, &str); 38] = [
                     ("Enter", "Open folder / enter archive"),
                     ("Backspace", "Go to parent folder"),
                     ("Tab", "Switch focus between Files and Archive"),
                     ("Up / Down", "Move the cursor"),
                     ("Shift+Up / Down", "Extend the selection"),
                     ("Space", "Toggle selection, move down"),
+                    ("Ctrl+Shift+T", "New tab"),
+                    ("Ctrl+W", "Close tab"),
+                    ("Ctrl+Tab", "Next tab"),
+                    ("Ctrl+Shift+F", "Search current tree"),
+                    ("Ctrl+Shift+P", "Command palette"),
                     ("Ctrl+A", "Select all entries"),
                     ("Ctrl+C", "Copy selected paths"),
                     ("Ctrl+F", "Filter the focused pane"),
@@ -28,6 +33,8 @@ impl AppView {
                     ("Ctrl+E", "Extract from the open archive"),
                     ("Ctrl+D", "Add Files selection to the archive"),
                     ("Ctrl+T", "Test the open archive"),
+                    ("F2", "Rename archive entry"),
+                    ("F7", "New archive folder"),
                     ("Delete", "Delete selected archive entries"),
                     ("F3", "Preview the selected file"),
                     ("Right click", "Open the pane context menu"),
@@ -36,6 +43,7 @@ impl AppView {
                     ("Esc", "Clear filter / close dialog"),
                     ("Alt+Left / Right", "Files history"),
                     ("Drag header", "Resize a column"),
+                    ("Drag preview edge", "Resize the preview pane"),
                     (
                         "Drag files",
                         "Drop on Archive to add, drop on Files to extract",

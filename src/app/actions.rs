@@ -30,6 +30,72 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn open_archive_properties(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.archive.archive.clone() else {
+            self.set_message("Open an archive first", true);
+            cx.notify();
+            return;
+        };
+        let Some(format) = self.archive.format else {
+            return;
+        };
+        let Some(listing) = self.archive.listing.as_ref() else {
+            self.set_message("Archive is still loading", true);
+            cx.notify();
+            return;
+        };
+        let files = listing.file_count();
+        let folders = listing.dir_count();
+        let total = listing.total_size();
+        let packed = listing.archive_size;
+        let ratio = if total == 0 {
+            "n/a".to_string()
+        } else {
+            format!("{:.1}%", packed as f64 / total as f64 * 100.0)
+        };
+        let encrypted = listing
+            .entries
+            .iter()
+            .filter(|entry| entry.encrypted)
+            .count();
+        let mut methods: Vec<&str> = listing
+            .entries
+            .iter()
+            .filter_map(|entry| entry.method.as_deref())
+            .collect();
+        methods.sort();
+        methods.dedup();
+        let method_text = if methods.is_empty() {
+            "unknown".to_string()
+        } else {
+            methods.join(", ")
+        };
+        let body = format!(
+            "Path: {}\nFormat: {}\nArchive size: {}\nUncompressed: {}\nCompression ratio: {}\nFiles: {}\nFolders: {}\nEncrypted entries: {}\nMethods: {}\nPassword held in memory: {}",
+            path.display(),
+            format.label(),
+            fsops::human_size(packed),
+            fsops::human_size(total),
+            ratio,
+            files,
+            folders,
+            encrypted,
+            method_text,
+            if self.archive.password.is_some() {
+                "yes"
+            } else {
+                "no"
+            }
+        );
+        self.modal = Some(Modal::Info {
+            title: "Archive properties".into(),
+            body,
+            error: false,
+        });
+        self.edit = None;
+        cx.notify();
+    }
+
     pub(crate) fn refresh_archive(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.archive.archive.clone() else {
             return;
@@ -239,6 +305,61 @@ impl AppView {
                     cx,
                 );
             }
+            PendingAction::OpenNested {
+                archive,
+                format,
+                dest,
+                raw_name,
+                display_name,
+            } => {
+                let label = format!("Opening nested {display_name}");
+                let password = password.clone();
+                let title = PathBuf::from(&display_name)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(&display_name)
+                    .to_string();
+                self.start_job(
+                    JobKind::Extract,
+                    label,
+                    move |job| {
+                        std::fs::create_dir_all(&dest).map_err(|error| {
+                            format!("Could not create {}: {error}", dest.display())
+                        })?;
+                        let mut cmd = archive::extract_command(
+                            &archive,
+                            format,
+                            &dest,
+                            std::slice::from_ref(&raw_name),
+                            password.as_deref(),
+                        )?;
+                        job::run_command(&mut cmd, &job)?;
+                        let path =
+                            archive::find_extracted(&dest, &display_name).ok_or_else(|| {
+                                format!("Could not find nested archive {display_name}")
+                            })?;
+                        Ok(JobPayload::Nested { path, title })
+                    },
+                    cx,
+                );
+            }
+            PendingAction::Edit {
+                archive,
+                format,
+                edit,
+            } => {
+                let label = "Updating archive".to_string();
+                let password = password.clone();
+                self.start_job(
+                    JobKind::Modify,
+                    label,
+                    move |job| {
+                        archive::apply_edit(&archive, format, edit, password.as_deref(), &job)?;
+                        Ok(JobPayload::Modified)
+                    },
+                    cx,
+                );
+            }
             PendingAction::Delete {
                 archive,
                 format,
@@ -319,6 +440,15 @@ impl AppView {
                 self.set_message("Operation ended unexpectedly", true);
             }
             Some(Err(error)) => {
+                if error == job::CANCELLED {
+                    self.last_action = None;
+                    if kind == JobKind::List {
+                        self.archive.loading = false;
+                    }
+                    self.set_message("Operation cancelled", false);
+                    cx.notify();
+                    return;
+                }
                 if archive::password_required(&error)
                     && let Some(action) = self.last_action.take()
                 {
@@ -396,6 +526,10 @@ impl AppView {
                     JobPayload::Created { archive } => {
                         self.set_message(format!("Created {}", archive.display()), false);
                         self.open_archive(archive, cx);
+                    }
+                    JobPayload::Nested { path, title } => {
+                        self.set_message(format!("Opened nested archive {title}"), false);
+                        self.open_archive_in_new_tab(path, cx);
                     }
                     JobPayload::Tested { summary } => {
                         self.set_message("Archive test passed", false);

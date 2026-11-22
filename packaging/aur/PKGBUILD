@@ -1,0 +1,37 @@
+pkgname=sevenzrn-git
+_gitname=7zrn
+pkgver=0.1.0.r1.gb43d305
+pkgrel=1
+pkgdesc='Native GPUI archive manager powered by 7-Zip and tar'
+arch=('x86_64')
+url='https://github.com/ddxtcc/7zrn'
+license=('MIT')
+depends=('7zip' 'tar' 'freetype2' 'libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'libx11' 'wayland' 'vulkan-icd-loader')
+makedepends=('git' 'rust' 'cargo' 'clang' 'cmake' 'pkgconf' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'wayland-protocols' 'vulkan-headers' 'fontconfig' 'freetype2' 'libx11' 'libxcb' 'mesa' 'libglvnd')
+optdepends=('gzip: gzip and tar.gz support'
+            'bzip2: bzip2 and tar.bz2 support'
+            'xz: xz and tar.xz support'
+            'zstd: zstd and tar.zst support')
+provides=('sevenzrn')
+conflicts=('sevenzrn')
+source=("$_gitname::git+https://github.com/ddxtcc/7zrn.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/$_gitname"
+    git describe --long --tags --abbrev=7 | sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g'
+}
+
+build() {
+    cd "$srcdir/$_gitname"
+    cargo build --release --locked
+}
+
+package() {
+    cd "$srcdir/$_gitname"
+    install -Dm755 target/release/sevenzrn "$pkgdir/usr/bin/sevenzrn"
+    install -Dm644 packaging/7zrn.desktop "$pkgdir/usr/share/applications/7zrn.desktop"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -d "$pkgdir/usr/share/icons"
+    cp -a assets/icons/hicolor "$pkgdir/usr/share/icons/"
+}

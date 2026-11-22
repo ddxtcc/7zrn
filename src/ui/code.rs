@@ -4,7 +4,13 @@ use gpui::{AnyElement, HighlightStyle, StyledText, div, px, rgb};
 use crate::syntax::{self, Syntax, SyntaxClass};
 use crate::theme::Theme;
 
-pub(crate) fn code_view(code: &str, syntax: Syntax, theme: Theme, numbered: bool) -> AnyElement {
+pub(crate) fn code_view(
+    code: &str,
+    syntax: Syntax,
+    theme: Theme,
+    numbered: bool,
+    wrap: bool,
+) -> AnyElement {
     let code = expand_tabs(code);
     let styled = styled_text(&code, syntax, theme);
     let line_height = px(16.);
@@ -13,7 +19,16 @@ pub(crate) fn code_view(code: &str, syntax: Syntax, theme: Theme, numbered: bool
         .text_xs()
         .line_height(line_height)
         .child(styled);
-    if numbered {
+    if wrap {
+        div()
+            .w_full()
+            .font_family("monospace")
+            .text_xs()
+            .line_height(line_height)
+            .text_color(rgb(theme.text))
+            .child(styled_text(&code, syntax, theme))
+            .into_any_element()
+    } else if numbered {
         let line_count = code.split('\n').count().max(1);
         let width = line_count.to_string().len();
         let numbers = (1..=line_count)

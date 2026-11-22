@@ -154,33 +154,64 @@ pub fn create_command(
     format: NewFormat,
     cwd: &Path,
     names: &[OsString],
+    options: &CreateOptions,
 ) -> Result<Command, String> {
     if names.is_empty() {
         return Err("Nothing to archive".into());
     }
     if let Some(kind) = format.seven_zip_type() {
+        if options.split.is_some() && format != NewFormat::SevenZ {
+            return Err("Split volumes are only supported for 7z archives.".into());
+        }
         let mut cmd = Command::new(SEVEN_ZIP);
-        cmd.args([
-            "a",
-            "-y",
-            "-bsp1",
-            "-bso1",
-            "-bse1",
-            "-spd",
-            "-mx=5",
-            "-sccUTF-8",
-        ])
-        .arg(format!("-t{kind}"))
-        .arg("--")
-        .arg(output);
+        cmd.args(["a", "-y", "-bsp1", "-bso1", "-bse1", "-sccUTF-8"])
+            .arg(format!("-t{kind}"))
+            .arg(format!("-mx={}", options.compression.min(9)));
+        if let Some(password) = options
+            .password
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            let mut argument = OsString::from("-p");
+            argument.push(password);
+            cmd.arg(argument);
+            if format == NewFormat::SevenZ {
+                cmd.arg("-mhe=on");
+            }
+        }
+        if let Some(split) = options.split.as_deref().filter(|value| !value.is_empty()) {
+            cmd.arg(format!("-v{split}"));
+        }
+        for exclude in options.excludes.iter().filter(|value| !value.is_empty()) {
+            cmd.arg(format!("-x!{exclude}"));
+        }
+        cmd.arg("--").arg(output);
         for name in names {
             cmd.arg(name);
         }
         cmd.current_dir(cwd);
         Ok(cmd)
     } else {
+        if options
+            .password
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
+            return Err("Passwords are only supported for 7z and zip archives.".into());
+        }
+        if options
+            .split
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
+            return Err("Split volumes are only supported for 7z archives.".into());
+        }
         let mut cmd = Command::new(TAR);
-        cmd.arg("-caf").arg(output).arg("-C").arg(cwd).arg("--");
+        cmd.arg("-caf").arg(output);
+        for exclude in options.excludes.iter().filter(|value| !value.is_empty()) {
+            cmd.arg(format!("--exclude={exclude}"));
+        }
+        cmd.arg("-C").arg(cwd).arg("--");
         for name in names {
             cmd.arg(name);
         }
@@ -251,6 +282,290 @@ pub fn tar_delete(
         }
         Ok(())
     })
+}
+
+#[derive(Clone, Debug)]
+pub struct CreateOptions {
+    pub compression: u8,
+    pub password: Option<String>,
+    pub split: Option<String>,
+    pub excludes: Vec<String>,
+}
+
+impl Default for CreateOptions {
+    fn default() -> Self {
+        Self {
+            compression: 5,
+            password: None,
+            split: None,
+            excludes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum ArchiveEdit {
+    Rename { from: String, to: String },
+    Copy { keys: Vec<String>, dest: String },
+    Move { keys: Vec<String>, dest: String },
+    NewFolder { path: String },
+}
+
+pub fn apply_edit(
+    archive: &Path,
+    format: Format,
+    edit: ArchiveEdit,
+    password: Option<&str>,
+    job: &SharedJob,
+) -> Result<(), String> {
+    if !format.can_modify() {
+        return Err(format!("{} archives are read-only", format.label()));
+    }
+    repack_any(archive, format, password, job, |root| {
+        apply_edit_in(root, edit, job)
+    })
+}
+
+fn apply_edit_in(root: &Path, edit: ArchiveEdit, job: &SharedJob) -> Result<(), String> {
+    match edit {
+        ArchiveEdit::Rename { from, to } => {
+            let source = safe_relative(&from).ok_or_else(|| "Invalid source path".to_string())?;
+            let target = safe_relative(&to).ok_or_else(|| "Invalid target path".to_string())?;
+            ensure_source(root, &source)?;
+            if root.join(&target).exists() {
+                return Err(format!("{} already exists", target.display()));
+            }
+            job::note(
+                job,
+                format!("Renaming {} to {}", source.display(), target.display()),
+            );
+            move_path(root, &source, &target)
+        }
+        ArchiveEdit::Copy { keys, dest } => copy_or_move(root, &keys, &dest, false, job),
+        ArchiveEdit::Move { keys, dest } => copy_or_move(root, &keys, &dest, true, job),
+        ArchiveEdit::NewFolder { path } => {
+            let relative = safe_relative(&path).ok_or_else(|| "Invalid folder path".to_string())?;
+            let target = root.join(&relative);
+            if target.exists() {
+                return Err(format!("{} already exists", relative.display()));
+            }
+            job::note(job, format!("Creating folder {}", relative.display()));
+            fs::create_dir_all(&target)
+                .map_err(|error| format!("Could not create {}: {error}", relative.display()))
+        }
+    }
+}
+
+fn copy_or_move(
+    root: &Path,
+    keys: &[String],
+    dest: &str,
+    remove: bool,
+    job: &SharedJob,
+) -> Result<(), String> {
+    let folder = if dest.trim().is_empty() {
+        PathBuf::new()
+    } else {
+        safe_relative(dest).ok_or_else(|| "Invalid destination folder".to_string())?
+    };
+    let mut sources: Vec<PathBuf> = keys.iter().filter_map(|key| safe_relative(key)).collect();
+    sources.sort();
+    let mut selected = Vec::new();
+    for source in sources {
+        if selected
+            .iter()
+            .any(|parent: &PathBuf| source.starts_with(parent))
+        {
+            continue;
+        }
+        selected.push(source);
+    }
+    if selected.is_empty() {
+        return Err("No entries selected".into());
+    }
+    for source in selected {
+        ensure_source(root, &source)?;
+        let Some(name) = source.file_name() else {
+            continue;
+        };
+        let target = folder.join(name);
+        if target == source {
+            return Err(format!("{} is already in that folder", source.display()));
+        }
+        if root.join(&source).is_dir() && target.starts_with(&source) {
+            return Err(format!("Cannot place {} inside itself", source.display()));
+        }
+        if root.join(&target).exists() {
+            return Err(format!("{} already exists", target.display()));
+        }
+        job::note(
+            job,
+            format!(
+                "{} {} to {}",
+                if remove { "Moving" } else { "Copying" },
+                source.display(),
+                folder.display()
+            ),
+        );
+        copy_path(root, &source, &target)?;
+        if remove {
+            remove_path(root, &source)?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_source(root: &Path, relative: &Path) -> Result<(), String> {
+    fs::symlink_metadata(root.join(relative))
+        .map(|_| ())
+        .map_err(|_| format!("{} does not exist", relative.display()))
+}
+
+fn copy_path(root: &Path, source: &Path, target: &Path) -> Result<(), String> {
+    copy_entry(&root.join(source), &root.join(target))
+}
+
+fn copy_entry(source: &Path, target: &Path) -> Result<(), String> {
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create {}: {error}", parent.display()))?;
+    }
+    let meta = fs::symlink_metadata(source)
+        .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
+    if meta.file_type().is_symlink() {
+        let link = fs::read_link(source)
+            .map_err(|error| format!("Could not read link {}: {error}", source.display()))?;
+        std::os::unix::fs::symlink(link, target)
+            .map_err(|error| format!("Could not create link {}: {error}", target.display()))?;
+    } else if meta.is_dir() {
+        fs::create_dir_all(target)
+            .map_err(|error| format!("Could not create {}: {error}", target.display()))?;
+        let entries = fs::read_dir(source)
+            .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("Could not read directory: {error}"))?;
+            copy_entry(&entry.path(), &target.join(entry.file_name()))?;
+        }
+    } else {
+        fs::copy(source, target).map_err(|error| {
+            format!(
+                "Could not copy {} to {}: {error}",
+                source.display(),
+                target.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn move_path(root: &Path, source: &Path, target: &Path) -> Result<(), String> {
+    copy_path(root, source, target)?;
+    remove_path(root, source)
+}
+
+fn remove_path(root: &Path, relative: &Path) -> Result<(), String> {
+    let path = root.join(relative);
+    let meta = fs::symlink_metadata(&path)
+        .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    if meta.is_dir() && !meta.file_type().is_symlink() {
+        fs::remove_dir_all(&path)
+            .map_err(|error| format!("Could not remove {}: {error}", path.display()))
+    } else {
+        fs::remove_file(&path)
+            .map_err(|error| format!("Could not remove {}: {error}", path.display()))
+    }
+}
+
+fn repack_any<F>(
+    archive: &Path,
+    format: Format,
+    password: Option<&str>,
+    job: &SharedJob,
+    mutate: F,
+) -> Result<(), String>
+where
+    F: FnOnce(&Path) -> Result<(), String>,
+{
+    let suffix = format
+        .tar_suffix()
+        .or(match format {
+            Format::SevenZ => Some("7z"),
+            Format::Zip => Some("zip"),
+            _ => None,
+        })
+        .ok_or_else(|| "Archive format cannot be edited".to_string())?;
+    let parent = archive
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let work_dir = std::env::temp_dir().join(format!("7zrn-{pid}-{stamp}"));
+    let out = parent.join(format!(".7zrn-{pid}-{stamp}.{suffix}"));
+
+    let result = (|| {
+        fs::create_dir_all(&work_dir)
+            .map_err(|error| format!("Could not create temporary directory: {error}"))?;
+        job::note(job, "Extracting archive to a temporary directory");
+        let mut extract = extract_command(archive, format, &work_dir, &[], password)?;
+        job::run_command(&mut extract, job)?;
+        mutate(&work_dir)?;
+        job::note(job, format!("Rebuilding {} archive", format.label()));
+        if format.is_tar_family() {
+            let mut create = Command::new(TAR);
+            create
+                .arg("-caf")
+                .arg(&out)
+                .arg("-C")
+                .arg(&work_dir)
+                .arg(".");
+            job::run_command(&mut create, job)?;
+        } else {
+            let kind = if format == Format::Zip { "zip" } else { "7z" };
+            let mut create = Command::new(SEVEN_ZIP);
+            create.args([
+                "a",
+                "-y",
+                "-bsp1",
+                "-bso1",
+                "-bse1",
+                "-spd",
+                "-mx=5",
+                "-sccUTF-8",
+            ]);
+            create.arg(format!("-t{kind}"));
+            apply_password_if_present(&mut create, password);
+            create.arg("--").arg(&out);
+            let names = fs::read_dir(&work_dir)
+                .map_err(|error| format!("Could not read temporary directory: {error}"))?;
+            for entry in names {
+                let entry = entry
+                    .map_err(|error| format!("Could not read temporary directory: {error}"))?;
+                create.arg(entry.file_name());
+            }
+            create.current_dir(&work_dir);
+            job::run_command(&mut create, job)?;
+        }
+        if !out.is_file() {
+            return Err("Archive rebuild produced no output".into());
+        }
+        fs::rename(&out, archive).map_err(|error| {
+            format!(
+                "Could not replace {} with the rebuilt archive: {error}",
+                archive.display()
+            )
+        })?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&out);
+    }
+    let _ = fs::remove_dir_all(&work_dir);
+    result
 }
 
 pub(crate) fn safe_relative(path: &str) -> Option<PathBuf> {
