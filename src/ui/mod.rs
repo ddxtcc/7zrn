@@ -24,6 +24,7 @@ mod markdown;
 mod modals;
 mod panes;
 mod preview;
+mod properties;
 mod settings_modal;
 mod tabs;
 pub(crate) mod widgets;

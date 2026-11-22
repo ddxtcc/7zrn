@@ -44,54 +44,9 @@ impl AppView {
             cx.notify();
             return;
         };
-        let files = listing.file_count();
-        let folders = listing.dir_count();
-        let total = listing.total_size();
-        let packed = listing.archive_size;
-        let ratio = if total == 0 {
-            "n/a".to_string()
-        } else {
-            format!("{:.1}%", packed as f64 / total as f64 * 100.0)
-        };
-        let encrypted = listing
-            .entries
-            .iter()
-            .filter(|entry| entry.encrypted)
-            .count();
-        let mut methods: Vec<&str> = listing
-            .entries
-            .iter()
-            .filter_map(|entry| entry.method.as_deref())
-            .collect();
-        methods.sort();
-        methods.dedup();
-        let method_text = if methods.is_empty() {
-            "unknown".to_string()
-        } else {
-            methods.join(", ")
-        };
-        let body = format!(
-            "Path: {}\nFormat: {}\nArchive size: {}\nUncompressed: {}\nCompression ratio: {}\nFiles: {}\nFolders: {}\nEncrypted entries: {}\nMethods: {}\nPassword held in memory: {}",
-            path.display(),
-            format.label(),
-            fsops::human_size(packed),
-            fsops::human_size(total),
-            ratio,
-            files,
-            folders,
-            encrypted,
-            method_text,
-            if self.archive.password.is_some() {
-                "yes"
-            } else {
-                "no"
-            }
-        );
-        self.modal = Some(Modal::Info {
-            title: "Archive properties".into(),
-            body,
-            error: false,
-        });
+        let stats =
+            archive::ArchiveStats::build(&path, format, listing, self.archive.password.is_some());
+        self.modal = Some(Modal::ArchiveProperties { stats });
         self.edit = None;
         cx.notify();
     }
@@ -533,11 +488,27 @@ impl AppView {
                     }
                     JobPayload::Tested { summary } => {
                         self.set_message("Archive test passed", false);
-                        self.modal = Some(Modal::Info {
-                            title: "Archive test passed".into(),
-                            body: summary,
-                            error: false,
-                        });
+                        let stats = self
+                            .archive
+                            .archive
+                            .as_ref()
+                            .zip(self.archive.format.zip(self.archive.listing.as_ref()))
+                            .map(|(path, (format, listing))| {
+                                archive::ArchiveStats::build(
+                                    path,
+                                    format,
+                                    listing,
+                                    self.archive.password.is_some(),
+                                )
+                            });
+                        self.modal = match stats {
+                            Some(stats) => Some(Modal::TestPassed { stats }),
+                            None => Some(Modal::Info {
+                                title: "Archive test passed".into(),
+                                body: summary,
+                                error: false,
+                            }),
+                        };
                     }
                 }
             }

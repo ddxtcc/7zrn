@@ -3,11 +3,13 @@ use std::path::Path;
 
 mod commands;
 mod list;
+mod stats;
 #[cfg(test)]
 mod tests;
 
 pub use commands::*;
 pub use list::*;
+pub(crate) use stats::*;
 
 pub const SEVEN_ZIP: &str = "7z";
 pub const TAR: &str = "tar";

@@ -10,7 +10,9 @@
 - Recursive name and content search, plus a command palette
 - Cancelable jobs with an operation log
 - Archive creation compression, password, split, and exclude options
-- Archive properties, PDF previews, image zoom, clickable Markdown links, local images, code wrapping, and copy
+- Archive properties with unit-aware sizes, compression bars, file-type distribution, and largest-file graphs
+- Archive test reports with formatted sizes and a details dashboard
+- PDF previews, image zoom, clickable Markdown links, local images, code wrapping, and copy
 - Resizable and persisted preview pane
 - AUR VCS package and Flatpak packaging
 

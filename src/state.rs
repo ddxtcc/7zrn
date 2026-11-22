@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use gpui::{ScrollStrategy, UniformListScrollHandle};
 
-use crate::archive::{self, ArchiveEdit, Child, Format, NewFormat};
+use crate::archive::{self, ArchiveEdit, ArchiveStats, Child, Format, NewFormat};
 use crate::fsops::{self, FsEntry};
 use crate::preview::PreviewContent;
 
@@ -470,6 +470,12 @@ pub(crate) enum Modal {
         kind: ArchiveEditKind,
         value: String,
         error: Option<String>,
+    },
+    ArchiveProperties {
+        stats: ArchiveStats,
+    },
+    TestPassed {
+        stats: ArchiveStats,
     },
     Search {
         scope: SearchScope,

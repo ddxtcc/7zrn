@@ -308,6 +308,8 @@ impl AppView {
             }
             Modal::Search { .. }
             | Modal::Palette { .. }
+            | Modal::ArchiveProperties { .. }
+            | Modal::TestPassed { .. }
             | Modal::Info { .. }
             | Modal::Settings
             | Modal::Help => {}

@@ -22,7 +22,8 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - Right-click context menus in both panes
 - Drag files between panes and accept external file drops
 - Archive creation options for compression, passwords, split volumes, and excludes
-- Archive properties with format, size, ratio, encryption, and methods
+- Archive properties with unit-aware sizes, compression ratio, type distribution, and largest files
+- Test reports include formatted sizes and a details dashboard
 - Resizable panes, columns, and preview, with persisted sizes
 - Six color themes: Dark, Light, Nord, Gruvbox, Dracula, and Solarized
 - Desktop integration and archive MIME defaults through the local installer
