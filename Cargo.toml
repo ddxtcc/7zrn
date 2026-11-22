@@ -1,6 +1,6 @@
 [package]
 name = "sevenzrn"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "7zrn - a native GPUI archive manager for Linux, powered by the 7-Zip and tar CLIs"
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-11-22
 
 - Rendered Markdown previews with headings, lists, tables, quotes, links, and fenced code
 - Code previews with line numbers, language badges, tab expansion, and expanded syntax support
