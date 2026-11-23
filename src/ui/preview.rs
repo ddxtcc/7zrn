@@ -4,6 +4,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, HighlightStyle, ObjectFit, StyledText, div, img, px, rgb};
 
 use crate::app::AppView;
+use crate::audio::{self, AudioPreview};
 use crate::hex::{self, HexPreview};
 use crate::nfo;
 use crate::preview::PreviewContent;
@@ -47,6 +48,7 @@ impl AppView {
                 self.settings.nfo_colors,
             ),
             PreviewContent::Hex(hex) => hex_view(hex, theme, self.settings.hex_colors),
+            PreviewContent::Audio(info) => self.audio_view(info, cx),
             PreviewContent::Image { path } => image_view(path, self.image_zoom),
             PreviewContent::Unsupported(message) => div()
                 .text_sm()
@@ -205,6 +207,7 @@ fn preview_language(preview: &PreviewView) -> Option<&'static str> {
         PreviewContent::Markdown { .. } => Some("Markdown"),
         PreviewContent::Nfo(_) => Some("NFO"),
         PreviewContent::Hex(_) => Some("Hex"),
+        PreviewContent::Audio(_) => Some("Audio"),
         PreviewContent::Text(text) => {
             let path = preview.path.as_deref().unwrap_or_else(|| Path::new(""));
             let syntax = Syntax::detect_with_text(path, text);
@@ -381,4 +384,164 @@ fn hex_byte_color(theme: Theme, byte: u8) -> u32 {
         0x20..=0x7e => theme.text,
         _ => theme.amber,
     }
+}
+
+impl AppView {
+    fn audio_view(&self, info: &AudioPreview, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme;
+        let path = self
+            .preview
+            .as_ref()
+            .and_then(|preview| preview.path.as_deref());
+        let title = info
+            .title
+            .clone()
+            .or_else(|| {
+                path.and_then(|path| path.file_name())
+                    .and_then(|name| name.to_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "Audio".to_string());
+        let subtitle = [info.artist.clone(), info.album.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+        let mut metadata = div().flex().flex_wrap().gap_2();
+        if let Some(duration) = info.duration {
+            metadata = metadata.child(audio_chip(
+                format!("Duration {}", audio::format_duration(duration)),
+                theme,
+            ));
+        }
+        if let Some(bitrate) = info.bitrate {
+            metadata = metadata.child(audio_chip(audio::format_bitrate(bitrate), theme));
+        }
+        if let Some(codec) = &info.codec {
+            metadata = metadata.child(audio_chip(codec.to_ascii_uppercase(), theme));
+        }
+        if let Some(sample_rate) = info.sample_rate {
+            metadata = metadata.child(audio_chip(format!("{} Hz", sample_rate), theme));
+        }
+        if let Some(channels) = info.channels {
+            metadata = metadata.child(audio_chip(
+                match channels {
+                    1 => "Mono".to_string(),
+                    2 => "Stereo".to_string(),
+                    other => format!("{other} channels"),
+                },
+                theme,
+            ));
+        }
+        if let Some(genre) = &info.genre {
+            metadata = metadata.child(audio_chip(genre.clone(), theme));
+        }
+        let cover = info.cover.as_ref().map_or_else(
+            || {
+                div()
+                    .size(px(132.))
+                    .flex_none()
+                    .rounded(px(6.))
+                    .bg(rgb(theme.panel2))
+                    .border_1()
+                    .border_color(rgb(theme.border))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(36.))
+                    .text_color(rgb(theme.muted))
+                    .child("♪")
+                    .into_any_element()
+            },
+            |cover| {
+                img(cover.clone())
+                    .size(px(132.))
+                    .flex_none()
+                    .rounded(px(6.))
+                    .object_fit(ObjectFit::Cover)
+                    .into_any_element()
+            },
+        );
+        let playing = self.audio.is_some();
+        div()
+            .w_full()
+            .flex()
+            .items_start()
+            .gap_3()
+            .child(cover)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(16.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(rgb(theme.text))
+                            .truncate()
+                            .child(title),
+                    )
+                    .when(!subtitle.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(theme.muted))
+                                .truncate()
+                                .child(subtitle),
+                        )
+                    })
+                    .child(metadata)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(self.btn(
+                                "audio-play",
+                                if playing { "Stop" } else { "Play" },
+                                true,
+                                cx,
+                                |this, _, cx| {
+                                    if this.audio.is_some() {
+                                        this.stop_audio();
+                                        cx.notify();
+                                    } else {
+                                        this.play_audio(cx);
+                                    }
+                                },
+                            ))
+                            .when_some(path, |this, path| {
+                                this.child(
+                                    div()
+                                        .flex_1()
+                                        .min_w(px(0.))
+                                        .truncate()
+                                        .text_xs()
+                                        .text_color(rgb(theme.dim))
+                                        .child(path.display().to_string()),
+                                )
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+fn audio_chip(label: String, theme: Theme) -> AnyElement {
+    div()
+        .px_2()
+        .h(px(20.))
+        .flex()
+        .items_center()
+        .rounded(px(4.))
+        .bg(rgb(theme.panel2))
+        .border_1()
+        .border_color(rgb(theme.border))
+        .text_xs()
+        .text_color(rgb(theme.muted))
+        .child(label)
+        .into_any_element()
 }

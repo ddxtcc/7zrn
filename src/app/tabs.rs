@@ -240,6 +240,7 @@ impl AppView {
 
 impl Drop for AppView {
     fn drop(&mut self) {
+        self.stop_audio();
         self.save_session();
     }
 }

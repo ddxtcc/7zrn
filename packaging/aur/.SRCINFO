@@ -1,6 +1,6 @@
 pkgbase = sevenzrn-git
 	pkgdesc = Native GPUI archive manager powered by 7-Zip and tar
-	pkgver = 0.5.0
+	pkgver = 0.6.0
 	pkgrel = 1
 	url = https://github.com/ddxtcc/7zrn
 	arch = x86_64
@@ -35,6 +35,8 @@ pkgbase = sevenzrn-git
 	optdepends = bzip2: bzip2 and tar.bz2 support
 	optdepends = xz: xz and tar.xz support
 	optdepends = zstd: zstd and tar.zst support
+	optdepends = ffmpeg: audio previews and ffplay playback
+	optdepends = mpv: fallback audio playback
 	provides = sevenzrn
 	conflicts = sevenzrn
 	source = 7zrn::git+https://github.com/ddxtcc/7zrn.git

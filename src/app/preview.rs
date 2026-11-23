@@ -371,6 +371,84 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn play_audio(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self
+            .preview
+            .as_ref()
+            .filter(|preview| matches!(preview.content, PreviewContent::Audio(_)))
+            .and_then(|preview| preview.path.clone())
+        else {
+            return;
+        };
+        self.stop_audio();
+        self.audio_generation = self.audio_generation.wrapping_add(1);
+        let generation = self.audio_generation;
+        let mut command = std::process::Command::new("ffplay");
+        command
+            .args(["-nodisp", "-autoexit", "-loglevel", "quiet"])
+            .arg(&path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let child = command.spawn().or_else(|_| {
+            let mut command = std::process::Command::new("mpv");
+            command
+                .args(["--no-video", "--really-quiet"])
+                .arg(&path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            command.spawn()
+        });
+        match child {
+            Ok(child) => {
+                self.audio = Some(child);
+                self.set_message(format!("Playing {}", path.display()), false);
+                cx.spawn(async move |this, cx| {
+                    loop {
+                        Timer::after(Duration::from_millis(300)).await;
+                        let finished = this.update(cx, |this, cx| {
+                            if this.audio_generation != generation {
+                                return true;
+                            }
+                            let Some(child) = this.audio.as_mut() else {
+                                return true;
+                            };
+                            match child.try_wait() {
+                                Ok(Some(_)) | Err(_) => {
+                                    this.audio = None;
+                                    this.set_message("Audio finished", false);
+                                    cx.notify();
+                                    true
+                                }
+                                Ok(None) => false,
+                            }
+                        });
+                        if !matches!(finished, Ok(false)) {
+                            break;
+                        }
+                    }
+                })
+                .detach();
+            }
+            Err(error) => {
+                self.set_message(
+                    format!("Could not start audio playback: {error}. Install ffmpeg or mpv."),
+                    true,
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn stop_audio(&mut self) {
+        self.audio_generation = self.audio_generation.wrapping_add(1);
+        if let Some(mut child) = self.audio.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
     pub(crate) fn show_preview(
         &mut self,
         path: Option<PathBuf>,
@@ -378,6 +456,8 @@ impl AppView {
         content: PreviewContent,
         cx: &mut Context<Self>,
     ) {
+        self.stop_audio();
+        let is_audio = matches!(content, PreviewContent::Audio(_));
         self.preview_generation += 1;
         self.context_menu = None;
         if matches!(content, PreviewContent::Image { .. }) {
@@ -389,10 +469,14 @@ impl AppView {
             content,
         });
         self.edit = None;
+        if is_audio && self.settings.audio_autoplay {
+            self.play_audio(cx);
+        }
         cx.notify();
     }
 
     pub(crate) fn close_preview(&mut self, cx: &mut Context<Self>) {
+        self.stop_audio();
         self.preview = None;
         self.preview_generation += 1;
         cx.notify();

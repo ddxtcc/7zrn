@@ -20,10 +20,11 @@ pub(crate) enum Setting {
     CodeWrap,
     BackupEdits,
     RestoreSession,
+    AudioAutoplay,
 }
 
 impl Setting {
-    pub(crate) const ALL: [Setting; 12] = [
+    pub(crate) const ALL: [Setting; 13] = [
         Setting::OpenAfterExtract,
         Setting::SingleClickOpen,
         Setting::AutoPreview,
@@ -36,6 +37,7 @@ impl Setting {
         Setting::CodeWrap,
         Setting::BackupEdits,
         Setting::RestoreSession,
+        Setting::AudioAutoplay,
     ];
 
     pub(crate) fn label(self) -> &'static str {
@@ -52,6 +54,7 @@ impl Setting {
             Setting::CodeWrap => "Wrap code previews by default",
             Setting::BackupEdits => "Keep a .bak before archive edits",
             Setting::RestoreSession => "Restore tabs on startup",
+            Setting::AudioAutoplay => "Autoplay audio previews",
         }
     }
 
@@ -73,6 +76,7 @@ impl Setting {
             Setting::CodeWrap => "Disable horizontal scrolling for long code lines.",
             Setting::BackupEdits => "Copy the archive to .bak before replacing it.",
             Setting::RestoreSession => "Reopen tabs and archive paths on the next launch.",
+            Setting::AudioAutoplay => "Start playback when an audio file is previewed.",
         }
     }
 
@@ -90,6 +94,7 @@ impl Setting {
             Setting::CodeWrap => settings.code_wrap,
             Setting::BackupEdits => settings.backup_edits,
             Setting::RestoreSession => settings.restore_session,
+            Setting::AudioAutoplay => settings.audio_autoplay,
         }
     }
 
@@ -107,6 +112,7 @@ impl Setting {
             Setting::CodeWrap => settings.code_wrap = value,
             Setting::BackupEdits => settings.backup_edits = value,
             Setting::RestoreSession => settings.restore_session = value,
+            Setting::AudioAutoplay => settings.audio_autoplay = value,
         }
     }
 }
@@ -125,6 +131,7 @@ pub(crate) struct Settings {
     pub(crate) code_wrap: bool,
     pub(crate) backup_edits: bool,
     pub(crate) restore_session: bool,
+    pub(crate) audio_autoplay: bool,
     pub(crate) nfo_font_size: f32,
     pub(crate) edit_compression: u8,
     pub(crate) default_format: NewFormat,
@@ -151,6 +158,7 @@ impl Default for Settings {
             code_wrap: false,
             backup_edits: true,
             restore_session: true,
+            audio_autoplay: false,
             nfo_font_size: 13.0,
             edit_compression: 5,
             default_format: NewFormat::SevenZ,
@@ -193,6 +201,7 @@ impl Settings {
                 "code_wrap" => settings.code_wrap = enabled,
                 "backup_edits" => settings.backup_edits = enabled,
                 "restore_session" => settings.restore_session = enabled,
+                "audio_autoplay" => settings.audio_autoplay = enabled,
                 "nfo_font_size" => {
                     if let Ok(value) = raw.parse::<f32>()
                         && value.is_finite()
@@ -297,7 +306,7 @@ impl Settings {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create {}: {error}", parent.display()))?;
         let contents = format!(
-            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\nconfirm_move={}\nauto_nfo_full={}\nnfo_colors={}\nhex_colors={}\ncode_wrap={}\nbackup_edits={}\nrestore_session={}\nnfo_font_size={:.2}\nedit_compression={}\ndefault_format={}\ndefault_compression={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
+            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\nconfirm_move={}\nauto_nfo_full={}\nnfo_colors={}\nhex_colors={}\ncode_wrap={}\nbackup_edits={}\nrestore_session={}\naudio_autoplay={}\nnfo_font_size={:.2}\nedit_compression={}\ndefault_format={}\ndefault_compression={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
             self.single_click_open,
             self.confirm_delete,
             self.show_hidden,
@@ -310,6 +319,7 @@ impl Settings {
             self.code_wrap,
             self.backup_edits,
             self.restore_session,
+            self.audio_autoplay,
             self.nfo_font_size,
             self.edit_compression,
             self.default_format.label(),
@@ -385,6 +395,7 @@ mod tests {
             code_wrap: true,
             backup_edits: false,
             restore_session: false,
+            audio_autoplay: true,
             nfo_font_size: 15.0,
             edit_compression: 7,
             default_format: NewFormat::Zip,
@@ -420,6 +431,7 @@ mod tests {
         assert!(loaded.code_wrap);
         assert!(!loaded.backup_edits);
         assert!(!loaded.restore_session);
+        assert!(loaded.audio_autoplay);
         assert_eq!(loaded.nfo_font_size, 15.0);
         assert_eq!(loaded.edit_compression, 7);
         assert_eq!(loaded.default_format, NewFormat::Zip);

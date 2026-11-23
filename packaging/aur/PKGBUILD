@@ -11,7 +11,9 @@ makedepends=('git' 'rust' 'cargo' 'clang' 'cmake' 'pkgconf' 'libxkbcommon' 'libx
 optdepends=('gzip: gzip and tar.gz support'
             'bzip2: bzip2 and tar.bz2 support'
             'xz: xz and tar.xz support'
-            'zstd: zstd and tar.zst support')
+            'zstd: zstd and tar.zst support'
+            'ffmpeg: audio previews and ffplay playback'
+            'mpv: fallback audio playback')
 provides=('sevenzrn')
 conflicts=('sevenzrn')
 source=("$_gitname::git+https://github.com/ddxtcc/7zrn.git")

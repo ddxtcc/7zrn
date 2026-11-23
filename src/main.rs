@@ -1,5 +1,6 @@
 mod app;
 mod archive;
+mod audio;
 mod checksum;
 mod columns;
 mod fsops;

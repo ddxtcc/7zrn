@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::audio::{self, AudioPreview};
 use crate::hex;
 use crate::markdown::{self, Block};
 use crate::nfo;
@@ -15,6 +16,7 @@ pub(crate) enum PreviewContent {
     Markdown { source: String, blocks: Vec<Block> },
     Nfo(nfo::NfoDocument),
     Hex(hex::HexPreview),
+    Audio(AudioPreview),
     Image { path: PathBuf },
     Unsupported(String),
     Error(String),
@@ -39,6 +41,12 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
     if is_image(path) {
         return PreviewContent::Image {
             path: path.to_path_buf(),
+        };
+    }
+    if audio::is_audio(path) {
+        return match audio::probe(path) {
+            Ok(info) => PreviewContent::Audio(info),
+            Err(message) => PreviewContent::Unsupported(message),
         };
     }
     if path

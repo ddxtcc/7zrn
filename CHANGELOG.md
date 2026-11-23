@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0 - 2026-11-23
+
+- Audio previews with tags, embedded cover art, technical metadata, and play/stop controls
+- Audio autoplay setting
+
+## 0.5.0 - 2026-11-23
+
+- Expanded settings for preview, editing, moves, defaults, backups, and session restore
+- Preserve configured compression and optional .bak backups during archive edits
+- Convert and recompress archives with format, compression, password, and split options
+- Merge numbered archive volumes
+- Archive checksum manifest verification and adding SHA256SUMS to archives
+- Cross-pane move with source deletion confirmation
+
 ## 0.4.0 - 2026-11-23
 
 - Verify checksum manifests inside archives without extracting the whole archive
