@@ -1,7 +1,7 @@
 # Arch packaging
 
 `PKGBUILD` builds `sevenzrn-git`, a VCS package that tracks
-`https://github.com/ddxtcc/7zrn.git` on the main branch. The v0.7.0 tag can be
+`https://github.com/ddxtcc/7zrn.git` on the main branch. The v0.7.1 tag can be
 used as the source for a stable PKGBUILD.
 
 Runtime dependencies include `7zip`, `tar`, and the GPUI graphics and input

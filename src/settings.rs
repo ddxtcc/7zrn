@@ -37,7 +37,7 @@ pub(crate) enum Setting {
     OpenAfterExtract,
     AutoPreview,
     ConfirmMove,
-    AutoNfoFull,
+    AutoNfoPreview,
     NfoColors,
     HexColors,
     CodeWrap,
@@ -55,7 +55,7 @@ impl Setting {
         Setting::ConfirmDelete,
         Setting::ConfirmMove,
         Setting::ShowHidden,
-        Setting::AutoNfoFull,
+        Setting::AutoNfoPreview,
         Setting::NfoColors,
         Setting::HexColors,
         Setting::CodeWrap,
@@ -73,7 +73,7 @@ impl Setting {
             Setting::OpenAfterExtract => "Open destination after extraction",
             Setting::AutoPreview => "Preview files when selected",
             Setting::ConfirmMove => "Confirm cross-pane moves",
-            Setting::AutoNfoFull => "Open root NFO in full view",
+            Setting::AutoNfoPreview => "Automatically preview root NFO",
             Setting::NfoColors => "Use ANSI colors in NFO previews",
             Setting::HexColors => "Use byte colors in hex previews",
             Setting::CodeWrap => "Wrap code previews by default",
@@ -98,7 +98,7 @@ impl Setting {
                 "Show files in the preview pane on click, within the configured size limits."
             }
             Setting::ConfirmMove => "Ask before deleting sources during a move.",
-            Setting::AutoNfoFull => "Open the full NFO viewer when an archive contains a root NFO.",
+            Setting::AutoNfoPreview => "Select and preview a root NFO when an archive opens.",
             Setting::NfoColors => "Preserve ANSI colors and bold attributes in NFO art.",
             Setting::HexColors => "Color zeroes, controls, printable bytes, and high bytes.",
             Setting::CodeWrap => "Disable horizontal scrolling for long code lines.",
@@ -117,7 +117,7 @@ impl Setting {
             Setting::OpenAfterExtract => settings.open_after_extract,
             Setting::AutoPreview => settings.auto_preview,
             Setting::ConfirmMove => settings.confirm_move,
-            Setting::AutoNfoFull => settings.auto_nfo_full,
+            Setting::AutoNfoPreview => settings.auto_nfo_preview,
             Setting::NfoColors => settings.nfo_colors,
             Setting::HexColors => settings.hex_colors,
             Setting::CodeWrap => settings.code_wrap,
@@ -136,7 +136,7 @@ impl Setting {
             Setting::OpenAfterExtract => settings.open_after_extract = value,
             Setting::AutoPreview => settings.auto_preview = value,
             Setting::ConfirmMove => settings.confirm_move = value,
-            Setting::AutoNfoFull => settings.auto_nfo_full = value,
+            Setting::AutoNfoPreview => settings.auto_nfo_preview = value,
             Setting::NfoColors => settings.nfo_colors = value,
             Setting::HexColors => settings.hex_colors = value,
             Setting::CodeWrap => settings.code_wrap = value,
@@ -156,7 +156,7 @@ pub(crate) struct Settings {
     pub(crate) open_after_extract: bool,
     pub(crate) auto_preview: bool,
     pub(crate) confirm_move: bool,
-    pub(crate) auto_nfo_full: bool,
+    pub(crate) auto_nfo_preview: bool,
     pub(crate) nfo_colors: bool,
     pub(crate) hex_colors: bool,
     pub(crate) code_wrap: bool,
@@ -190,7 +190,7 @@ impl Default for Settings {
             open_after_extract: true,
             auto_preview: true,
             confirm_move: true,
-            auto_nfo_full: true,
+            auto_nfo_preview: true,
             nfo_colors: true,
             hex_colors: true,
             code_wrap: false,
@@ -240,7 +240,7 @@ impl Settings {
                 "open_after_extract" => settings.open_after_extract = enabled,
                 "auto_preview" => settings.auto_preview = enabled,
                 "confirm_move" => settings.confirm_move = enabled,
-                "auto_nfo_full" => settings.auto_nfo_full = enabled,
+                "auto_nfo_preview" | "auto_nfo_full" => settings.auto_nfo_preview = enabled,
                 "nfo_colors" => settings.nfo_colors = enabled,
                 "hex_colors" => settings.hex_colors = enabled,
                 "code_wrap" => settings.code_wrap = enabled,
@@ -382,14 +382,14 @@ impl Settings {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create {}: {error}", parent.display()))?;
         let contents = format!(
-            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\nconfirm_move={}\nauto_nfo_full={}\nnfo_colors={}\nhex_colors={}\ncode_wrap={}\nbackup_edits={}\nrestore_session={}\naudio_autoplay={}\naudio_cover_art={}\npreview_limit_mb={}\naudio_limit_mb={}\npreview_text_kb={}\npreview_hex_kb={}\npdf_dpi={}\naudio_player={}\nnfo_font_size={:.2}\nedit_compression={}\ndefault_format={}\ndefault_compression={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
+            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\nconfirm_move={}\nauto_nfo_preview={}\nnfo_colors={}\nhex_colors={}\ncode_wrap={}\nbackup_edits={}\nrestore_session={}\naudio_autoplay={}\naudio_cover_art={}\npreview_limit_mb={}\naudio_limit_mb={}\npreview_text_kb={}\npreview_hex_kb={}\npdf_dpi={}\naudio_player={}\nnfo_font_size={:.2}\nedit_compression={}\ndefault_format={}\ndefault_compression={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
             self.single_click_open,
             self.confirm_delete,
             self.show_hidden,
             self.open_after_extract,
             self.auto_preview,
             self.confirm_move,
-            self.auto_nfo_full,
+            self.auto_nfo_preview,
             self.nfo_colors,
             self.hex_colors,
             self.code_wrap,
@@ -472,7 +472,7 @@ mod tests {
             open_after_extract: false,
             auto_preview: false,
             confirm_move: false,
-            auto_nfo_full: false,
+            auto_nfo_preview: false,
             nfo_colors: false,
             hex_colors: false,
             code_wrap: true,
@@ -515,7 +515,7 @@ mod tests {
         assert!(!loaded.open_after_extract);
         assert!(!loaded.auto_preview);
         assert!(!loaded.confirm_move);
-        assert!(!loaded.auto_nfo_full);
+        assert!(!loaded.auto_nfo_preview);
         assert!(!loaded.nfo_colors);
         assert!(!loaded.hex_colors);
         assert!(loaded.code_wrap);
