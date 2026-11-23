@@ -59,6 +59,9 @@ fn detects_compound_extensions() {
     assert_eq!(Format::detect(Path::new("x.zip")), Format::Zip);
     assert_eq!(Format::detect(Path::new("x.7z.001")), Format::SevenZ);
     assert_eq!(Format::detect(Path::new("x.zip.001")), Format::Zip);
+    assert_eq!(Format::detect(Path::new("x.rar")), Format::Rar);
+    assert_eq!(Format::detect(Path::new("x.r00")), Format::Rar);
+    assert_eq!(Format::detect(Path::new("x.part01.rar")), Format::Rar);
     assert_eq!(Format::detect(Path::new("x.bin")), Format::Other);
 }
 
@@ -122,6 +125,8 @@ fn recognizes_archive_extensions() {
     assert!(is_archive_name("foo.tar.gz"));
     assert!(is_archive_name("FOO.7Z"));
     assert!(is_archive_name("foo.7z.001"));
+    assert!(is_archive_name("foo.rar"));
+    assert!(is_archive_name("foo.r00"));
     assert!(!is_archive_name("foo.txt"));
     assert!(!is_archive_name("foo"));
 }

@@ -17,7 +17,8 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - Syntax-highlighted code previews with line numbers, language badges, and shebang detection
 - Markdown headings, lists, tables, quotes, clickable links, local images, and syntax-highlighted fenced code
 - PDF and image previews with zoom, plus a resizable preview pane
-- Old-school NFO viewer with CP437 and ANSI decoding, fixed 80-column layout
+- Old-school NFO viewer with CP437 and ANSI decoding, fixed 80-column layout, full view, and automatic root-NFO preview
+- RAR and RAR5 listing and extraction through 7z (read-only)
 - Hex preview for binary files with offsets and ASCII side channel
 - SHA-256, SHA-1, MD5, and CRC32 checksums with copy, SHA256SUMS save, and manifest verification
 - Automatic preview of clicked files up to 4 MiB, configurable in Settings

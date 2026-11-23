@@ -189,6 +189,7 @@ pub(crate) struct ArchiveState {
     pub(crate) loading: bool,
     pub(crate) error: Option<String>,
     pub(crate) password: Option<String>,
+    pub(crate) auto_nfo: bool,
 }
 
 impl ArchiveState {
@@ -206,6 +207,7 @@ impl ArchiveState {
             loading: false,
             error: None,
             password: None,
+            auto_nfo: false,
         }
     }
 
@@ -356,6 +358,7 @@ impl ArchiveState {
         self.loading = false;
         self.error = None;
         self.password = None;
+        self.auto_nfo = false;
     }
 }
 
@@ -500,6 +503,10 @@ pub(crate) enum Modal {
     },
     Checksums {
         entries: Vec<ChecksumEntry>,
+    },
+    Nfo {
+        title: String,
+        document: crate::nfo::NfoDocument,
     },
     TestPassed {
         stats: ArchiveStats,

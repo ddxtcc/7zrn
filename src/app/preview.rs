@@ -7,7 +7,7 @@ use gpui::{ClipboardItem, Context, Timer};
 
 use crate::archive::{self, Child, Format};
 use crate::preview::{self, PreviewContent};
-use crate::state::{PendingAction, PreviewView};
+use crate::state::{Modal, PendingAction, PreviewView};
 
 use super::AppView;
 
@@ -57,6 +57,62 @@ impl AppView {
         }
         let content = preview::load(&path);
         self.show_preview(Some(path), title, content, cx);
+    }
+
+    pub(crate) fn auto_preview_root_nfo(&mut self, cx: &mut Context<Self>) {
+        if !self.settings.auto_preview || !self.archive.inner.is_empty() {
+            return;
+        }
+        let children = self.arc_visible_children();
+        let mut candidates: Vec<(usize, String)> = children
+            .iter()
+            .enumerate()
+            .filter(|(_, child)| !child.is_parent && !child.is_dir)
+            .filter_map(|(index, child)| {
+                let name = child.name.to_ascii_lowercase();
+                let rank = if name == "file_id.diz" {
+                    0
+                } else if name.ends_with(".nfo") {
+                    1
+                } else if name.ends_with(".diz") {
+                    2
+                } else {
+                    return None;
+                };
+                Some((index, format!("{rank}:{}", child.name.to_ascii_lowercase())))
+            })
+            .collect();
+        candidates.sort_by(|left, right| left.1.cmp(&right.1));
+        let Some(index) = candidates.first().map(|(index, _)| *index) else {
+            return;
+        };
+        let Some(child) = children.get(index).cloned() else {
+            return;
+        };
+        let key = self.archive.key_for(&child.name);
+        self.archive.active = Some(index);
+        self.archive.anchor = Some(index);
+        self.archive.selected.clear();
+        self.archive.selected.insert(key);
+        self.archive
+            .scroll
+            .scroll_to_item(index, gpui::ScrollStrategy::Center);
+        self.preview_archive_entry(&child, true, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn open_nfo_full(&mut self, cx: &mut Context<Self>) {
+        let Some(preview) = &self.preview else {
+            return;
+        };
+        let PreviewContent::Nfo(document) = &preview.content else {
+            return;
+        };
+        let document = document.clone();
+        let title = preview.title.clone();
+        self.modal = Some(Modal::Nfo { title, document });
+        self.edit = None;
+        cx.notify();
     }
 
     pub(crate) fn preview_archive_active(&mut self, cx: &mut Context<Self>) {

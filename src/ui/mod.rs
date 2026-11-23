@@ -23,6 +23,7 @@ mod drag;
 mod help_modal;
 mod markdown;
 mod modals;
+mod nfo;
 mod panes;
 mod preview;
 mod properties;

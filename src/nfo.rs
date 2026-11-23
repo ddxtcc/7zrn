@@ -30,7 +30,7 @@ pub(crate) fn nfo_color(color: u8) -> u32 {
         4 => 0x6d8fd6,
         5 => 0xc06dd6,
         6 => 0x5bc4c4,
-        7 => 0xd0d3da,
+        7 => 0xf4f6fa,
         8 => 0x5a5e68,
         9 => 0xff7b7b,
         10 => 0x9eed8a,

@@ -23,6 +23,7 @@ impl AppView {
         self.archive.format = Some(format);
         self.archive.password = None;
         self.archive.loading = true;
+        self.archive.auto_nfo = true;
         self.focused = Pane::Archive;
         self.edit = None;
         self.push_recent(path.clone());
@@ -500,6 +501,10 @@ impl AppView {
                         self.archive.clamp_active();
                         if self.archive.active.is_none() {
                             self.archive.reset_active();
+                        }
+                        if self.archive.auto_nfo {
+                            self.archive.auto_nfo = false;
+                            self.auto_preview_root_nfo(cx);
                         }
                         self.set_message(format!("{name} - {counts}"), false);
                     }

@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Old-school NFO viewer with CP437 decoding, ANSI colors, and no-wrap 80-column layout
+- Old-school NFO viewer with CP437 decoding, ANSI colors, no-wrap 80-column layout, a full view, and automatic root-NFO preview
+- RAR and RAR5 detection and extraction through 7z
 - Hex preview for binary files with offsets and ASCII rendering
 - SHA-256, SHA-1, MD5, and CRC32 checksums for files and archive entries
 - Copy checksums as SHA256SUMS, save a SHA256SUMS file, and verify checksum manifests

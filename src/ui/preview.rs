@@ -110,6 +110,13 @@ impl AppView {
             }
             _ => false,
         };
+        if matches!(preview.content, PreviewContent::Nfo(_)) {
+            header = header.child(
+                self.btn("preview-nfo-full", "Full", true, cx, |this, _, cx| {
+                    this.open_nfo_full(cx)
+                }),
+            );
+        }
         if is_code {
             header = header.child(self.btn(
                 "preview-wrap",
@@ -225,7 +232,7 @@ fn image_view(path: &Path, zoom: f32) -> AnyElement {
         .into_any_element()
 }
 
-fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement {
+pub(crate) fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement {
     let highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = document
         .colors
         .iter()
@@ -259,7 +266,7 @@ fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement {
             div()
                 .font_family("monospace")
                 .text_xs()
-                .line_height(px(14.))
+                .line_height(px(16.))
                 .whitespace_nowrap()
                 .text_color(rgb(nfo::nfo_color(7)))
                 .child(styled),
