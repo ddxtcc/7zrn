@@ -1,6 +1,6 @@
 pkgbase = sevenzrn-git
 	pkgdesc = Native GPUI archive manager powered by 7-Zip and tar
-	pkgver = 0.4.0
+	pkgver = 0.5.0
 	pkgrel = 1
 	url = https://github.com/ddxtcc/7zrn
 	arch = x86_64

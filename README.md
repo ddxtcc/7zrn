@@ -97,7 +97,7 @@ makepkg -si
 ```
 
 The package is named `sevenzrn-git` and tracks the main branch. A stable
-PKGBUILD can be based on the v0.4.0 tag. It depends on `7zip`, `tar`, and the
+PKGBUILD can be based on the v0.5.0 tag. It depends on `7zip`, `tar`, and the
 GPUI runtime libraries.
 
 Flatpak packaging is in `packaging/flatpak`. See
