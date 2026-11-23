@@ -1,6 +1,6 @@
 use gpui::Context;
 
-use crate::settings::Setting;
+use crate::settings::{AudioPlayer, Setting};
 use crate::state::Modal;
 use crate::theme::ThemeId;
 
@@ -50,6 +50,36 @@ impl AppView {
 
     pub(crate) fn set_default_compression(&mut self, value: u8, cx: &mut Context<Self>) {
         self.settings.default_compression = value.min(9);
+        self.save_settings(cx);
+    }
+
+    pub(crate) fn set_preview_limit_mb(&mut self, value: u64, cx: &mut Context<Self>) {
+        self.settings.preview_limit_mb = value.clamp(4, 1024);
+        self.save_settings(cx);
+    }
+
+    pub(crate) fn set_audio_limit_mb(&mut self, value: u64, cx: &mut Context<Self>) {
+        self.settings.audio_limit_mb = value.clamp(16, 4096);
+        self.save_settings(cx);
+    }
+
+    pub(crate) fn set_preview_text_kb(&mut self, value: u64, cx: &mut Context<Self>) {
+        self.settings.preview_text_kb = value.clamp(16, 2048);
+        self.save_settings(cx);
+    }
+
+    pub(crate) fn set_preview_hex_kb(&mut self, value: u64, cx: &mut Context<Self>) {
+        self.settings.preview_hex_kb = value.clamp(4, 512);
+        self.save_settings(cx);
+    }
+
+    pub(crate) fn set_pdf_dpi(&mut self, value: u32, cx: &mut Context<Self>) {
+        self.settings.pdf_dpi = value.clamp(48, 300);
+        self.save_settings(cx);
+    }
+
+    pub(crate) fn set_audio_player(&mut self, player: AudioPlayer, cx: &mut Context<Self>) {
+        self.settings.audio_player = player;
         self.save_settings(cx);
     }
 

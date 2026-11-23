@@ -7,14 +7,11 @@ use gpui::{ClipboardItem, Context, Timer};
 
 use crate::archive::{self, Child, Format};
 use crate::audio;
-use crate::preview::{self, PreviewContent};
+use crate::preview::{self, PreviewContent, PreviewLimits};
+use crate::settings::AudioPlayer;
 use crate::state::{Modal, PendingAction, PreviewView};
 
 use super::AppView;
-
-pub(crate) const PREVIEW_LIMIT: u64 = 64 * 1024 * 1024;
-const AUDIO_PREVIEW_LIMIT: u64 = 1024 * 1024 * 1024;
-const ARCHIVE_AUDIO_PREVIEW_LIMIT: u64 = 512 * 1024 * 1024;
 
 impl AppView {
     pub(crate) fn preview_fs_active(&mut self, cx: &mut Context<Self>) {
@@ -46,7 +43,7 @@ impl AppView {
         let size = std::fs::metadata(&path)
             .map(|metadata| metadata.len())
             .unwrap_or(0);
-        let limit = preview_limit(&path);
+        let limit = self.preview_limit(&path);
         if size > limit {
             if automatic {
                 return;
@@ -59,7 +56,7 @@ impl AppView {
             );
             return;
         }
-        let content = preview::load(&path);
+        let content = preview::load(&path, self.preview_limits());
         self.show_preview(Some(path), title, content, cx);
     }
 
@@ -155,7 +152,7 @@ impl AppView {
         else {
             return;
         };
-        let limit = archive_preview_limit(&key);
+        let limit = self.archive_preview_limit(&key);
         if entry.size > limit {
             if automatic {
                 return;
@@ -189,6 +186,7 @@ impl AppView {
         let raw_name = entry.raw_path.clone();
         let password = self.archive.password.clone();
         let dest = preview_cache_dir(&archive);
+        let limits = self.preview_limits();
         self.preview_generation += 1;
         let generation = self.preview_generation;
         self.context_menu = None;
@@ -201,7 +199,7 @@ impl AppView {
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let _ = sender.send(prepare_preview(
-                archive, format, dest, raw_name, key, password,
+                archive, format, dest, raw_name, key, password, limits,
             ));
         });
         cx.spawn(async move |this, cx| {
@@ -388,23 +386,7 @@ impl AppView {
         self.stop_audio();
         self.audio_generation = self.audio_generation.wrapping_add(1);
         let generation = self.audio_generation;
-        let mut command = std::process::Command::new("ffplay");
-        command
-            .args(["-nodisp", "-autoexit", "-loglevel", "quiet"])
-            .arg(&path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        let child = command.spawn().or_else(|_| {
-            let mut command = std::process::Command::new("mpv");
-            command
-                .args(["--no-video", "--really-quiet"])
-                .arg(&path)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null());
-            command.spawn()
-        });
+        let child = start_audio(&path, self.settings.audio_player);
         match child {
             Ok(child) => {
                 self.audio = Some(child);
@@ -513,19 +495,34 @@ impl AppView {
     }
 }
 
-fn preview_limit(path: &Path) -> u64 {
-    if audio::is_audio(path) {
-        AUDIO_PREVIEW_LIMIT
-    } else {
-        PREVIEW_LIMIT
+impl AppView {
+    fn preview_limits(&self) -> PreviewLimits {
+        PreviewLimits {
+            text_bytes: (self.settings.preview_text_kb * 1024) as usize,
+            hex_bytes: (self.settings.preview_hex_kb * 1024) as usize,
+            pdf_dpi: self.settings.pdf_dpi,
+            audio_cover: self.settings.audio_cover_art,
+        }
     }
-}
 
-fn archive_preview_limit(name: &str) -> u64 {
-    if audio::is_audio(Path::new(name)) {
-        ARCHIVE_AUDIO_PREVIEW_LIMIT
-    } else {
-        PREVIEW_LIMIT
+    fn preview_limit(&self, path: &Path) -> u64 {
+        Self::limit_bytes(if audio::is_audio(path) {
+            self.settings.audio_limit_mb
+        } else {
+            self.settings.preview_limit_mb
+        })
+    }
+
+    fn archive_preview_limit(&self, name: &str) -> u64 {
+        Self::limit_bytes(if audio::is_audio(Path::new(name)) {
+            self.settings.audio_limit_mb
+        } else {
+            self.settings.preview_limit_mb
+        })
+    }
+
+    fn limit_bytes(mebibytes: u64) -> u64 {
+        mebibytes.saturating_mul(1024 * 1024)
     }
 }
 
@@ -553,6 +550,40 @@ fn cache_dir(prefix: &str, archive: &Path) -> PathBuf {
         .join(name)
 }
 
+fn start_audio(path: &Path, preferred: AudioPlayer) -> std::io::Result<std::process::Child> {
+    let order = match preferred {
+        AudioPlayer::Ffplay => [AudioPlayer::Ffplay, AudioPlayer::Mpv],
+        AudioPlayer::Mpv => [AudioPlayer::Mpv, AudioPlayer::Ffplay],
+    };
+    let mut last_error = None;
+    for player in order {
+        let mut command = std::process::Command::new(match player {
+            AudioPlayer::Ffplay => "ffplay",
+            AudioPlayer::Mpv => "mpv",
+        });
+        match player {
+            AudioPlayer::Ffplay => {
+                command.args(["-nodisp", "-autoexit", "-loglevel", "quiet"]);
+            }
+            AudioPlayer::Mpv => {
+                command.args(["--no-video", "--really-quiet"]);
+            }
+        }
+        command
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "No audio player available")
+    }))
+}
+
 fn prepare_preview(
     archive: PathBuf,
     format: Format,
@@ -560,6 +591,7 @@ fn prepare_preview(
     raw_name: String,
     display_name: String,
     password: Option<String>,
+    limits: PreviewLimits,
 ) -> Result<(PathBuf, PreviewContent), String> {
     std::fs::create_dir_all(&dest)
         .map_err(|error| format!("Could not create {}: {error}", dest.display()))?;
@@ -578,6 +610,6 @@ fn prepare_preview(
     }
     let path = archive::find_extracted(&dest, &display_name)
         .ok_or_else(|| format!("Could not find extracted {display_name}"))?;
-    let content = preview::load(&path);
+    let content = preview::load(&path, limits);
     Ok((path, content))
 }

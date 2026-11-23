@@ -7,6 +7,29 @@ use crate::fsops;
 use crate::theme::ThemeId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AudioPlayer {
+    Ffplay,
+    Mpv,
+}
+
+impl AudioPlayer {
+    pub(crate) const ALL: [AudioPlayer; 2] = [AudioPlayer::Ffplay, AudioPlayer::Mpv];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            AudioPlayer::Ffplay => "ffplay",
+            AudioPlayer::Mpv => "mpv",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|player| player.label().eq_ignore_ascii_case(value))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Setting {
     SingleClickOpen,
     ConfirmDelete,
@@ -21,10 +44,11 @@ pub(crate) enum Setting {
     BackupEdits,
     RestoreSession,
     AudioAutoplay,
+    AudioCoverArt,
 }
 
 impl Setting {
-    pub(crate) const ALL: [Setting; 13] = [
+    pub(crate) const ALL: [Setting; 14] = [
         Setting::OpenAfterExtract,
         Setting::SingleClickOpen,
         Setting::AutoPreview,
@@ -38,6 +62,7 @@ impl Setting {
         Setting::BackupEdits,
         Setting::RestoreSession,
         Setting::AudioAutoplay,
+        Setting::AudioCoverArt,
     ];
 
     pub(crate) fn label(self) -> &'static str {
@@ -55,6 +80,7 @@ impl Setting {
             Setting::BackupEdits => "Keep a .bak before archive edits",
             Setting::RestoreSession => "Restore tabs on startup",
             Setting::AudioAutoplay => "Autoplay audio previews",
+            Setting::AudioCoverArt => "Show embedded audio cover art",
         }
     }
 
@@ -69,7 +95,7 @@ impl Setting {
                 "Navigate to the extracted files and highlight them in Files."
             }
             Setting::AutoPreview => {
-                "Show files up to 64 MiB in the preview pane on click. Audio uses a 1 GiB limit."
+                "Show files in the preview pane on click, within the configured size limits."
             }
             Setting::ConfirmMove => "Ask before deleting sources during a move.",
             Setting::AutoNfoFull => "Open the full NFO viewer when an archive contains a root NFO.",
@@ -79,6 +105,7 @@ impl Setting {
             Setting::BackupEdits => "Copy the archive to .bak before replacing it.",
             Setting::RestoreSession => "Reopen tabs and archive paths on the next launch.",
             Setting::AudioAutoplay => "Start playback when an audio file is previewed.",
+            Setting::AudioCoverArt => "Extract and show cover art from audio tags.",
         }
     }
 
@@ -97,6 +124,7 @@ impl Setting {
             Setting::BackupEdits => settings.backup_edits,
             Setting::RestoreSession => settings.restore_session,
             Setting::AudioAutoplay => settings.audio_autoplay,
+            Setting::AudioCoverArt => settings.audio_cover_art,
         }
     }
 
@@ -115,6 +143,7 @@ impl Setting {
             Setting::BackupEdits => settings.backup_edits = value,
             Setting::RestoreSession => settings.restore_session = value,
             Setting::AudioAutoplay => settings.audio_autoplay = value,
+            Setting::AudioCoverArt => settings.audio_cover_art = value,
         }
     }
 }
@@ -134,6 +163,13 @@ pub(crate) struct Settings {
     pub(crate) backup_edits: bool,
     pub(crate) restore_session: bool,
     pub(crate) audio_autoplay: bool,
+    pub(crate) audio_cover_art: bool,
+    pub(crate) preview_limit_mb: u64,
+    pub(crate) audio_limit_mb: u64,
+    pub(crate) preview_text_kb: u64,
+    pub(crate) preview_hex_kb: u64,
+    pub(crate) pdf_dpi: u32,
+    pub(crate) audio_player: AudioPlayer,
     pub(crate) nfo_font_size: f32,
     pub(crate) edit_compression: u8,
     pub(crate) default_format: NewFormat,
@@ -161,6 +197,13 @@ impl Default for Settings {
             backup_edits: true,
             restore_session: true,
             audio_autoplay: false,
+            audio_cover_art: true,
+            preview_limit_mb: 64,
+            audio_limit_mb: 1024,
+            preview_text_kb: 256,
+            preview_hex_kb: 64,
+            pdf_dpi: 96,
+            audio_player: AudioPlayer::Ffplay,
             nfo_font_size: 13.0,
             edit_compression: 5,
             default_format: NewFormat::SevenZ,
@@ -204,6 +247,37 @@ impl Settings {
                 "backup_edits" => settings.backup_edits = enabled,
                 "restore_session" => settings.restore_session = enabled,
                 "audio_autoplay" => settings.audio_autoplay = enabled,
+                "audio_cover_art" => settings.audio_cover_art = enabled,
+                "preview_limit_mb" => {
+                    if let Ok(value) = raw.parse::<u64>() {
+                        settings.preview_limit_mb = value.clamp(4, 1024);
+                    }
+                }
+                "audio_limit_mb" => {
+                    if let Ok(value) = raw.parse::<u64>() {
+                        settings.audio_limit_mb = value.clamp(16, 4096);
+                    }
+                }
+                "preview_text_kb" => {
+                    if let Ok(value) = raw.parse::<u64>() {
+                        settings.preview_text_kb = value.clamp(16, 2048);
+                    }
+                }
+                "preview_hex_kb" => {
+                    if let Ok(value) = raw.parse::<u64>() {
+                        settings.preview_hex_kb = value.clamp(4, 512);
+                    }
+                }
+                "pdf_dpi" => {
+                    if let Ok(value) = raw.parse::<u32>() {
+                        settings.pdf_dpi = value.clamp(48, 300);
+                    }
+                }
+                "audio_player" => {
+                    if let Some(player) = AudioPlayer::parse(raw) {
+                        settings.audio_player = player;
+                    }
+                }
                 "nfo_font_size" => {
                     if let Ok(value) = raw.parse::<f32>()
                         && value.is_finite()
@@ -308,7 +382,7 @@ impl Settings {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create {}: {error}", parent.display()))?;
         let contents = format!(
-            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\nconfirm_move={}\nauto_nfo_full={}\nnfo_colors={}\nhex_colors={}\ncode_wrap={}\nbackup_edits={}\nrestore_session={}\naudio_autoplay={}\nnfo_font_size={:.2}\nedit_compression={}\ndefault_format={}\ndefault_compression={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
+            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\nconfirm_move={}\nauto_nfo_full={}\nnfo_colors={}\nhex_colors={}\ncode_wrap={}\nbackup_edits={}\nrestore_session={}\naudio_autoplay={}\naudio_cover_art={}\npreview_limit_mb={}\naudio_limit_mb={}\npreview_text_kb={}\npreview_hex_kb={}\npdf_dpi={}\naudio_player={}\nnfo_font_size={:.2}\nedit_compression={}\ndefault_format={}\ndefault_compression={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
             self.single_click_open,
             self.confirm_delete,
             self.show_hidden,
@@ -322,6 +396,13 @@ impl Settings {
             self.backup_edits,
             self.restore_session,
             self.audio_autoplay,
+            self.audio_cover_art,
+            self.preview_limit_mb,
+            self.audio_limit_mb,
+            self.preview_text_kb,
+            self.preview_hex_kb,
+            self.pdf_dpi,
+            self.audio_player.label(),
             self.nfo_font_size,
             self.edit_compression,
             self.default_format.label(),
@@ -398,6 +479,13 @@ mod tests {
             backup_edits: false,
             restore_session: false,
             audio_autoplay: true,
+            audio_cover_art: false,
+            preview_limit_mb: 128,
+            audio_limit_mb: 2048,
+            preview_text_kb: 512,
+            preview_hex_kb: 128,
+            pdf_dpi: 144,
+            audio_player: AudioPlayer::Mpv,
             nfo_font_size: 15.0,
             edit_compression: 7,
             default_format: NewFormat::Zip,
@@ -434,6 +522,13 @@ mod tests {
         assert!(!loaded.backup_edits);
         assert!(!loaded.restore_session);
         assert!(loaded.audio_autoplay);
+        assert!(!loaded.audio_cover_art);
+        assert_eq!(loaded.preview_limit_mb, 128);
+        assert_eq!(loaded.audio_limit_mb, 2048);
+        assert_eq!(loaded.preview_text_kb, 512);
+        assert_eq!(loaded.preview_hex_kb, 128);
+        assert_eq!(loaded.pdf_dpi, 144);
+        assert_eq!(loaded.audio_player, AudioPlayer::Mpv);
         assert_eq!(loaded.nfo_font_size, 15.0);
         assert_eq!(loaded.edit_compression, 7);
         assert_eq!(loaded.default_format, NewFormat::Zip);
@@ -464,5 +559,12 @@ mod tests {
         assert!(settings.auto_preview);
         assert_eq!(settings.theme, ThemeId::Dark);
         assert!((settings.split - 0.5).abs() < 0.001);
+        assert!(settings.audio_cover_art);
+        assert_eq!(settings.preview_limit_mb, 64);
+        assert_eq!(settings.audio_limit_mb, 1024);
+        assert_eq!(settings.preview_text_kb, 256);
+        assert_eq!(settings.preview_hex_kb, 64);
+        assert_eq!(settings.pdf_dpi, 96);
+        assert_eq!(settings.audio_player, AudioPlayer::Ffplay);
     }
 }

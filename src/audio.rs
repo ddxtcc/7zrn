@@ -41,7 +41,7 @@ pub(crate) fn is_audio(path: &Path) -> bool {
     )
 }
 
-pub(crate) fn probe(path: &Path) -> Result<AudioPreview, String> {
+pub(crate) fn probe(path: &Path, cover_art: bool) -> Result<AudioPreview, String> {
     let output = Command::new("ffprobe")
         .args([
             "-v",
@@ -104,11 +104,13 @@ pub(crate) fn probe(path: &Path) -> Result<AudioPreview, String> {
     if info.duration.is_none() && info.codec.is_none() {
         return Err("This file does not contain an audio stream.".into());
     }
-    info.cover = cover_art(path);
+    if cover_art {
+        info.cover = extract_cover(path);
+    }
     Ok(info)
 }
 
-fn cover_art(path: &Path) -> Option<PathBuf> {
+fn extract_cover(path: &Path) -> Option<PathBuf> {
     let probe = Command::new("ffprobe")
         .args([
             "-v",

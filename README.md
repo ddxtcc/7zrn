@@ -26,8 +26,8 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - Cross-pane move with confirmation for Files to archive and archive to Files
 - Archive conversion and recompression with format, compression, password, and split options
 - Merge numbered archive volumes
-- Expanded settings for preview, editing, moves, defaults, backups, audio autoplay, and session restore
-- Automatic preview of clicked files up to 64 MiB, with a 1 GiB limit for audio, configurable in Settings
+- Expanded settings for preview limits, text and hex sizes, PDF DPI, audio playback, editing, moves, defaults, backups, and session restore
+- Automatic previews with configurable general, audio, text, and hex size limits
 - Open files directly, extracting only the selected archive entry when needed
 - Right-click context menus in both panes
 - Drag files between panes and accept external file drops
@@ -99,7 +99,7 @@ makepkg -si
 ```
 
 The package is named `sevenzrn-git` and tracks the main branch. A stable
-PKGBUILD can be based on the v0.6.1 tag. It depends on `7zip`, `tar`, and the
+PKGBUILD can be based on the v0.7.0 tag. It depends on `7zip`, `tar`, and the
 GPUI runtime libraries.
 
 Flatpak packaging is in `packaging/flatpak`. See

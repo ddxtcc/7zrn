@@ -7,7 +7,24 @@ use crate::hex;
 use crate::markdown::{self, Block};
 use crate::nfo;
 
-const MAX_TEXT: usize = 256 * 1024;
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PreviewLimits {
+    pub(crate) text_bytes: usize,
+    pub(crate) hex_bytes: usize,
+    pub(crate) pdf_dpi: u32,
+    pub(crate) audio_cover: bool,
+}
+
+impl Default for PreviewLimits {
+    fn default() -> Self {
+        Self {
+            text_bytes: 256 * 1024,
+            hex_bytes: 64 * 1024,
+            pdf_dpi: 96,
+            audio_cover: true,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) enum PreviewContent {
@@ -34,7 +51,7 @@ impl PreviewContent {
     }
 }
 
-pub(crate) fn load(path: &Path) -> PreviewContent {
+pub(crate) fn load(path: &Path, limits: PreviewLimits) -> PreviewContent {
     if !path.is_file() {
         return PreviewContent::Error("Not a file".into());
     }
@@ -44,7 +61,7 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
         };
     }
     if audio::is_audio(path) {
-        return match audio::probe(path) {
+        return match audio::probe(path, limits.audio_cover) {
             Ok(info) => PreviewContent::Audio(info),
             Err(message) => PreviewContent::Unsupported(message),
         };
@@ -54,7 +71,7 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
     {
-        return match render_pdf(path) {
+        return match render_pdf(path, limits.pdf_dpi) {
             Ok(path) => PreviewContent::Image { path },
             Err(message) => PreviewContent::Unsupported(message),
         };
@@ -66,25 +83,28 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
         Err(error) => return PreviewContent::Error(format!("Could not read file: {error}")),
     };
     let mut bytes = Vec::new();
-    if let Err(error) = file.take(MAX_TEXT as u64 + 1).read_to_end(&mut bytes) {
+    if let Err(error) = file
+        .take(limits.text_bytes as u64 + 1)
+        .read_to_end(&mut bytes)
+    {
         return PreviewContent::Error(format!("Could not read file: {error}"));
     }
     if nfo {
         return PreviewContent::Nfo(nfo::decode(&bytes));
     }
     if bytes.contains(&0) {
-        return PreviewContent::Hex(hex::format(&bytes, 64 * 1024));
+        return PreviewContent::Hex(hex::format(&bytes, limits.hex_bytes));
     }
-    let truncated = bytes.len() > MAX_TEXT;
+    let truncated = bytes.len() > limits.text_bytes;
     if truncated {
-        bytes.truncate(MAX_TEXT);
+        bytes.truncate(limits.text_bytes);
     }
     let text = String::from_utf8_lossy(&bytes).to_string();
     if text
         .chars()
         .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
     {
-        return PreviewContent::Hex(hex::format(&bytes, 64 * 1024));
+        return PreviewContent::Hex(hex::format(&bytes, limits.hex_bytes));
     }
     if text.is_empty() {
         return PreviewContent::Text("(empty file)".into());
@@ -129,7 +149,7 @@ fn is_markdown(path: &Path) -> bool {
     )
 }
 
-fn render_pdf(path: &Path) -> Result<PathBuf, String> {
+fn render_pdf(path: &Path, dpi: u32) -> Result<PathBuf, String> {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
@@ -139,7 +159,8 @@ fn render_pdf(path: &Path) -> Result<PathBuf, String> {
         .map_err(|error| format!("Could not create PDF preview directory: {error}"))?;
     let output = directory.join("page");
     let result = std::process::Command::new("pdftoppm")
-        .args(["-png", "-f", "1", "-singlefile", "-r", "96"])
+        .args(["-png", "-f", "1", "-singlefile", "-r"])
+        .arg(dpi.to_string())
         .arg(path)
         .arg(&output)
         .output();
@@ -216,7 +237,7 @@ mod tests {
     fn previews_text_and_rejects_binary() {
         let text_path = temp_path("text.txt");
         std::fs::write(&text_path, b"hello\nworld\n").unwrap();
-        match load(&text_path) {
+        match load(&text_path, PreviewLimits::default()) {
             PreviewContent::Text(text) => assert!(text.contains("hello")),
             other => panic!("expected text preview, got {other:?}"),
         }
@@ -224,7 +245,10 @@ mod tests {
 
         let binary_path = temp_path("binary.bin");
         std::fs::write(&binary_path, [0, 1, 2, 3]).unwrap();
-        assert!(matches!(load(&binary_path), PreviewContent::Hex(_)));
+        assert!(matches!(
+            load(&binary_path, PreviewLimits::default()),
+            PreviewContent::Hex(_)
+        ));
         std::fs::remove_file(&binary_path).unwrap();
     }
 
@@ -232,7 +256,7 @@ mod tests {
     fn previews_markdown_by_extension() {
         let path = temp_path("readme.md");
         std::fs::write(&path, b"# Title\n\nBody\n").unwrap();
-        match load(&path) {
+        match load(&path, PreviewLimits::default()) {
             PreviewContent::Markdown { blocks, .. } => assert!(matches!(
                 blocks.first(),
                 Some(Block::Heading { level: 1, .. })
@@ -246,7 +270,10 @@ mod tests {
     fn previews_images_by_extension() {
         let path = temp_path("image.png");
         std::fs::write(&path, []).unwrap();
-        assert!(matches!(load(&path), PreviewContent::Image { .. }));
+        assert!(matches!(
+            load(&path, PreviewLimits::default()),
+            PreviewContent::Image { .. }
+        ));
         std::fs::remove_file(&path).unwrap();
     }
 }

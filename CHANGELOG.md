@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 - 2026-11-23
+
+- Configurable general and audio preview size limits
+- Configurable text and hex preview sizes
+- Configurable PDF render DPI
+- Choose ffplay or mpv for audio playback
+- Toggle embedded audio cover art
+
+## 0.6.1 - 2026-11-23
+
+- Raise general preview limit to 64 MiB and audio previews to 1 GiB
+
 ## 0.6.0 - 2026-11-23
 
 - Audio previews with tags, embedded cover art, technical metadata, and play/stop controls

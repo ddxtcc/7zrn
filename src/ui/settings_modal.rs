@@ -3,7 +3,7 @@ use gpui::{AnyElement, ClickEvent, Context, SharedString, div, px, rgb};
 
 use crate::app::AppView;
 use crate::archive::NewFormat;
-use crate::settings::{Setting, Settings};
+use crate::settings::{AudioPlayer, Setting, Settings};
 use crate::theme::ThemeId;
 
 fn default_format_id(format: NewFormat) -> &'static str {
@@ -15,6 +15,13 @@ fn default_format_id(format: NewFormat) -> &'static str {
         NewFormat::TarBz2 => "default-format-tarbz2",
         NewFormat::TarXz => "default-format-tarxz",
         NewFormat::TarZst => "default-format-tarzst",
+    }
+}
+
+fn audio_player_chip_id(player: AudioPlayer) -> &'static str {
+    match player {
+        AudioPlayer::Ffplay => "audio-player-ffplay",
+        AudioPlayer::Mpv => "audio-player-mpv",
     }
 }
 
@@ -147,7 +154,99 @@ impl AppView {
                                     cx,
                                 )
                             },
+                        ))
+                        .child(self.settings_number_row(
+                            "General preview limit",
+                            "Maximum size for non-audio files in the preview pane.",
+                            &format!("{} MiB", self.settings.preview_limit_mb),
+                            ("settings-preview-limit-dec", "settings-preview-limit-inc"),
+                            cx,
+                            |this, delta, cx| {
+                                let value =
+                                    (this.settings.preview_limit_mb as i64 + (delta as i64) * 4)
+                                        .clamp(4, 1024) as u64;
+                                this.set_preview_limit_mb(value, cx)
+                            },
+                        ))
+                        .child(self.settings_number_row(
+                            "Audio preview limit",
+                            "Maximum size for audio metadata and playback.",
+                            &format!("{} MiB", self.settings.audio_limit_mb),
+                            ("settings-audio-limit-dec", "settings-audio-limit-inc"),
+                            cx,
+                            |this, delta, cx| {
+                                let value =
+                                    (this.settings.audio_limit_mb as i64 + (delta as i64) * 64)
+                                        .clamp(16, 4096) as u64;
+                                this.set_audio_limit_mb(value, cx)
+                            },
+                        ))
+                        .child(self.settings_number_row(
+                            "Text preview size",
+                            "Maximum text read for code, Markdown, and NFO previews.",
+                            &format!("{} KiB", self.settings.preview_text_kb),
+                            ("settings-text-size-dec", "settings-text-size-inc"),
+                            cx,
+                            |this, delta, cx| {
+                                let value =
+                                    (this.settings.preview_text_kb as i64 + (delta as i64) * 64)
+                                        .clamp(16, 2048) as u64;
+                                this.set_preview_text_kb(value, cx)
+                            },
+                        ))
+                        .child(self.settings_number_row(
+                            "Hex preview size",
+                            "Maximum bytes shown in hex previews.",
+                            &format!("{} KiB", self.settings.preview_hex_kb),
+                            ("settings-hex-size-dec", "settings-hex-size-inc"),
+                            cx,
+                            |this, delta, cx| {
+                                let value =
+                                    (this.settings.preview_hex_kb as i64 + (delta as i64) * 16)
+                                        .clamp(4, 512) as u64;
+                                this.set_preview_hex_kb(value, cx)
+                            },
+                        ))
+                        .child(self.settings_number_row(
+                            "PDF render DPI",
+                            "Raster resolution used for PDF previews.",
+                            &format!("{} dpi", self.settings.pdf_dpi),
+                            ("settings-pdf-dpi-dec", "settings-pdf-dpi-inc"),
+                            cx,
+                            |this, delta, cx| {
+                                let value = (this.settings.pdf_dpi as i64 + (delta as i64) * 12)
+                                    .clamp(48, 300)
+                                    as u32;
+                                this.set_pdf_dpi(value, cx)
+                            },
                         )),
+                )
+                .child(div().h(px(1.)).bg(rgb(theme.border)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(div().text_sm().text_color(rgb(theme.text)).child("Audio"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(theme.dim))
+                                .child("Playback player"),
+                        )
+                        .child({
+                            let mut players = div().flex().flex_wrap().gap_2();
+                            for player in AudioPlayer::ALL {
+                                players = players.child(self.chip(
+                                    audio_player_chip_id(player),
+                                    player.label(),
+                                    self.settings.audio_player == player,
+                                    cx,
+                                    move |this, _, cx| this.set_audio_player(player, cx),
+                                ));
+                            }
+                            players
+                        }),
                 )
                 .child(div().h(px(1.)).bg(rgb(theme.border)))
                 .child(
