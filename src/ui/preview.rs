@@ -4,6 +4,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, HighlightStyle, ObjectFit, StyledText, div, img, px, rgb};
 
 use crate::app::AppView;
+use crate::hex::{self, HexPreview};
 use crate::nfo;
 use crate::preview::PreviewContent;
 use crate::state::PreviewView;
@@ -40,7 +41,7 @@ impl AppView {
                 markdown_view(blocks, theme, preview.path.as_deref(), cx)
             }
             PreviewContent::Nfo(document) => nfo_view(document, theme),
-            PreviewContent::Hex(hex) => hex_view(&hex.text, theme),
+            PreviewContent::Hex(hex) => hex_view(hex, theme),
             PreviewContent::Image { path } => image_view(path, self.image_zoom),
             PreviewContent::Unsupported(message) => div()
                 .text_sm()
@@ -274,22 +275,96 @@ pub(crate) fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement 
         .into_any_element()
 }
 
-fn hex_view(text: &str, theme: Theme) -> AnyElement {
+fn hex_view(preview: &HexPreview, theme: Theme) -> AnyElement {
+    let mut text = String::new();
+    let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+    let header = hex::header();
+    text.push_str(&header);
+    text.push('\n');
+    highlights.push((
+        0..header.len(),
+        HighlightStyle::color(rgb(theme.dim).into()),
+    ));
+    for (index, line) in preview.lines.iter().enumerate() {
+        let line_start = text.len();
+        text.push_str(&format!("{:08x}  ", line.offset));
+        highlights.push((
+            line_start..line_start + 8,
+            HighlightStyle::color(rgb(theme.accent).into()),
+        ));
+        for byte_index in 0..16 {
+            if let Some(byte) = line.bytes.get(byte_index) {
+                let start = text.len();
+                text.push_str(&format!("{byte:02x}"));
+                highlights.push((
+                    start..start + 2,
+                    HighlightStyle::color(rgb(hex_byte_color(theme, *byte)).into()),
+                ));
+                text.push(' ');
+            } else {
+                text.push_str("   ");
+            }
+            if byte_index == 7 {
+                text.push(' ');
+            }
+        }
+        let separator_start = text.len();
+        text.push_str(" |");
+        highlights.push((
+            separator_start..separator_start + 2,
+            HighlightStyle::color(rgb(theme.border2).into()),
+        ));
+        for byte in &line.bytes {
+            let start = text.len();
+            let printable = (0x20..=0x7e).contains(byte);
+            text.push(if printable { *byte as char } else { '.' });
+            let color = if printable { theme.text } else { theme.dim };
+            highlights.push((start..start + 1, HighlightStyle::color(rgb(color).into())));
+        }
+        for _ in line.bytes.len()..16 {
+            text.push(' ');
+        }
+        text.push('|');
+        if index + 1 < preview.lines.len() {
+            text.push('\n');
+        }
+    }
+    if preview.truncated {
+        let start = text.len();
+        text.push_str("\n[hex preview truncated]");
+        highlights.push((
+            start..text.len(),
+            HighlightStyle::color(rgb(theme.amber).into()),
+        ));
+    }
+    let styled = StyledText::new(text).with_highlights(highlights);
     div()
         .id("hex-scroll")
         .w_full()
         .h_full()
         .overflow_scroll()
         .bg(rgb(theme.input_bg))
+        .border_1()
+        .border_color(rgb(theme.border))
         .p_2()
         .child(
             div()
-                .font_family("monospace")
-                .text_xs()
-                .line_height(px(15.))
+                .font_family("DejaVu Sans Mono")
+                .text_size(px(12.5))
+                .line_height(px(17.))
                 .whitespace_nowrap()
-                .text_color(rgb(theme.text))
-                .child(StyledText::new(text.to_string())),
+                .text_color(rgb(theme.muted))
+                .child(styled),
         )
         .into_any_element()
+}
+
+fn hex_byte_color(theme: Theme, byte: u8) -> u32 {
+    match byte {
+        0x00 => theme.dim,
+        0x01..=0x1f => theme.purple,
+        0x7f => theme.red,
+        0x20..=0x7e => theme.text,
+        _ => theme.amber,
+    }
 }

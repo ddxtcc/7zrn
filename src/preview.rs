@@ -26,7 +26,7 @@ impl PreviewContent {
             PreviewContent::Text(text) => Some(text.clone()),
             PreviewContent::Markdown { source, .. } => Some(source.clone()),
             PreviewContent::Nfo(document) => Some(document.text.clone()),
-            PreviewContent::Hex(preview) => Some(preview.text.clone()),
+            PreviewContent::Hex(preview) => Some(preview.text()),
             _ => None,
         }
     }
