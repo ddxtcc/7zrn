@@ -153,8 +153,12 @@ fn run_impl(
     capture_stdout: bool,
     password: Option<&str>,
 ) -> Result<String, String> {
-    if job.lock().unwrap().cancel {
-        return Err(CANCELLED.to_string());
+    {
+        let mut job = job.lock().unwrap();
+        if job.cancel {
+            return Err(CANCELLED.to_string());
+        }
+        job.percent = None;
     }
     cmd.stdin(if password.is_some() {
         Stdio::piped()
@@ -214,6 +218,10 @@ fn run_impl(
     let stdout = String::from_utf8_lossy(&out_shared.lock().unwrap()).to_string();
     let stderr = String::from_utf8_lossy(&err_shared.lock().unwrap()).to_string();
 
+    if status.success() {
+        job.lock().unwrap().percent = Some(100);
+    }
+
     if !status.success() {
         let code = status
             .code()
@@ -264,7 +272,7 @@ fn read_stream<R: Read>(
         };
         raw.lock().unwrap().extend_from_slice(&chunk[..n]);
         for &byte in &chunk[..n] {
-            if byte == b'\n' || byte == b'\r' {
+            if byte == b'\n' || byte == b'\r' || byte == 0x08 {
                 if !pending.is_empty() {
                     handle_line(&pending, &job, capture_output, is_stdout);
                     pending.clear();
@@ -318,6 +326,20 @@ mod tests {
         cancel(&job);
         let result = worker.join().unwrap();
         assert_eq!(result.unwrap_err(), CANCELLED);
+    }
+
+    #[test]
+    fn reads_backspace_separated_progress() {
+        let job = new_job(JobKind::Extract, "test");
+        let input = b"  0%\x08\x08 42%\x08\x08 100%\x08";
+        read_stream(
+            std::io::Cursor::new(input),
+            Arc::new(Mutex::new(Vec::new())),
+            job.clone(),
+            false,
+            true,
+        );
+        assert_eq!(job.lock().unwrap().percent, Some(100));
     }
 
     #[test]

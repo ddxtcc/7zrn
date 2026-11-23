@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.2 - 2026-11-23
+
+- Parse backspace-delimited 7z progress updates so extraction progress advances
+- Force completed jobs to report 100 percent
+
 ## 0.8.1 - 2026-11-23
 
 - Add elapsed and total playback progress for audio previews
