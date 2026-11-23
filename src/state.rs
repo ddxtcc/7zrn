@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use gpui::{ScrollStrategy, UniformListScrollHandle};
 
 use crate::archive::{self, ArchiveEdit, ArchiveStats, Child, Format, NewFormat};
+use crate::checksum::ChecksumEntry;
 use crate::fsops::{self, FsEntry};
 use crate::preview::PreviewContent;
 
@@ -398,6 +399,9 @@ pub(crate) enum PendingAction {
         format: Format,
         edit: ArchiveEdit,
     },
+    Checksums {
+        source: ChecksumSource,
+    },
     OpenNested {
         archive: PathBuf,
         format: Format,
@@ -418,6 +422,12 @@ impl PendingAction {
             PendingAction::Delete { archive, .. } => archive,
             PendingAction::Edit { archive, .. } => archive,
             PendingAction::OpenNested { archive, .. } => archive,
+            PendingAction::Checksums {
+                source: ChecksumSource::Archive { archive, .. },
+            } => archive,
+            PendingAction::Checksums {
+                source: ChecksumSource::Fs { .. },
+            } => Path::new(""),
         }
     }
 
@@ -431,8 +441,22 @@ impl PendingAction {
             PendingAction::Delete { .. } => "delete entries from this archive",
             PendingAction::Edit { .. } => "edit this archive",
             PendingAction::OpenNested { .. } => "open this archive",
+            PendingAction::Checksums { .. } => "compute checksums",
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ChecksumSource {
+    Fs {
+        paths: Vec<PathBuf>,
+    },
+    Archive {
+        archive: PathBuf,
+        format: Format,
+        dest: PathBuf,
+        raw_names: Vec<String>,
+    },
 }
 
 pub(crate) enum ArchiveEditKind {
@@ -473,6 +497,9 @@ pub(crate) enum Modal {
     },
     ArchiveProperties {
         stats: ArchiveStats,
+    },
+    Checksums {
+        entries: Vec<ChecksumEntry>,
     },
     TestPassed {
         stats: ArchiveStats,

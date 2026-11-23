@@ -2,7 +2,9 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::hex;
 use crate::markdown::{self, Block};
+use crate::nfo;
 
 const MAX_TEXT: usize = 256 * 1024;
 
@@ -11,6 +13,8 @@ pub(crate) enum PreviewContent {
     Loading,
     Text(String),
     Markdown { source: String, blocks: Vec<Block> },
+    Nfo(nfo::NfoDocument),
+    Hex(hex::HexPreview),
     Image { path: PathBuf },
     Unsupported(String),
     Error(String),
@@ -21,6 +25,8 @@ impl PreviewContent {
         match self {
             PreviewContent::Text(text) => Some(text.clone()),
             PreviewContent::Markdown { source, .. } => Some(source.clone()),
+            PreviewContent::Nfo(document) => Some(document.text.clone()),
+            PreviewContent::Hex(preview) => Some(preview.text.clone()),
             _ => None,
         }
     }
@@ -46,6 +52,7 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
         };
     }
     let markdown = is_markdown(path);
+    let nfo = is_nfo(path);
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) => return PreviewContent::Error(format!("Could not read file: {error}")),
@@ -54,8 +61,11 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
     if let Err(error) = file.take(MAX_TEXT as u64 + 1).read_to_end(&mut bytes) {
         return PreviewContent::Error(format!("Could not read file: {error}"));
     }
+    if nfo {
+        return PreviewContent::Nfo(nfo::decode(&bytes));
+    }
     if bytes.contains(&0) {
-        return PreviewContent::Unsupported("This file appears to be binary.".into());
+        return PreviewContent::Hex(hex::format(&bytes, 64 * 1024));
     }
     let truncated = bytes.len() > MAX_TEXT;
     if truncated {
@@ -66,7 +76,7 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
         .chars()
         .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
     {
-        return PreviewContent::Unsupported("This file appears to be binary.".into());
+        return PreviewContent::Hex(hex::format(&bytes, 64 * 1024));
     }
     if text.is_empty() {
         return PreviewContent::Text("(empty file)".into());
@@ -84,6 +94,21 @@ pub(crate) fn load(path: &Path) -> PreviewContent {
     } else {
         PreviewContent::Text(text)
     }
+}
+
+fn is_nfo(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name == "file_id.diz" {
+        return true;
+    }
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return false;
+    };
+    matches!(extension.to_ascii_lowercase().as_str(), "nfo" | "diz")
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -191,7 +216,7 @@ mod tests {
 
         let binary_path = temp_path("binary.bin");
         std::fs::write(&binary_path, [0, 1, 2, 3]).unwrap();
-        assert!(matches!(load(&binary_path), PreviewContent::Unsupported(_)));
+        assert!(matches!(load(&binary_path), PreviewContent::Hex(_)));
         std::fs::remove_file(&binary_path).unwrap();
     }
 

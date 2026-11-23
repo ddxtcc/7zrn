@@ -773,6 +773,7 @@ impl AppView {
             }
             Modal::ArchiveProperties { stats } => self.render_archive_properties_modal(stats, cx),
             Modal::TestPassed { stats } => self.render_test_passed_modal(stats, cx),
+            Modal::Checksums { entries } => self.render_checksums_modal(entries, cx),
             Modal::Info { title, body, error } => {
                 let mut lines = div().flex().flex_col().gap_1();
                 for line in body.lines() {

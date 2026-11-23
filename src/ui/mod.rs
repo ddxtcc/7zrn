@@ -15,6 +15,7 @@ use crate::state::{EditTarget, Modal, Pane};
 use crate::ui::widgets::*;
 
 mod archive;
+mod checksums;
 mod code;
 mod columns;
 mod context;

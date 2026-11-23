@@ -1,9 +1,12 @@
 mod app;
 mod archive;
+mod checksum;
 mod columns;
 mod fsops;
+mod hex;
 mod job;
 mod markdown;
+mod nfo;
 mod palette;
 mod preview;
 mod session;

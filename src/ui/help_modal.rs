@@ -10,7 +10,7 @@ impl AppView {
             "7zrn - archive manager",
             720.0,
             {
-                let rows: [(&str, &str); 38] = [
+                let rows: [(&str, &str); 40] = [
                     ("Enter", "Open folder / enter archive"),
                     ("Backspace", "Go to parent folder"),
                     ("Tab", "Switch focus between Files and Archive"),
@@ -22,6 +22,8 @@ impl AppView {
                     ("Ctrl+Tab", "Next tab"),
                     ("Ctrl+Shift+F", "Search current tree"),
                     ("Ctrl+Shift+P", "Command palette"),
+                    ("Ctrl+Shift+C", "Checksums for the focused pane"),
+                    ("Ctrl+Shift+V", "Verify selected checksum file"),
                     ("Ctrl+A", "Select all entries"),
                     ("Ctrl+C", "Copy selected paths"),
                     ("Ctrl+F", "Filter the focused pane"),

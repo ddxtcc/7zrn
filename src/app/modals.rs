@@ -310,6 +310,7 @@ impl AppView {
             | Modal::Palette { .. }
             | Modal::ArchiveProperties { .. }
             | Modal::TestPassed { .. }
+            | Modal::Checksums { .. }
             | Modal::Info { .. }
             | Modal::Settings
             | Modal::Help => {}

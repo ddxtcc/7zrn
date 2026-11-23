@@ -13,6 +13,7 @@ use crate::theme::{Theme, ThemeId};
 
 mod actions;
 mod archive_ops;
+mod checksum;
 mod context;
 mod drop;
 mod input;

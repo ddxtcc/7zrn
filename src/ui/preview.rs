@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, ObjectFit, StyledText, div, img, px, rgb};
+use gpui::{AnyElement, Context, HighlightStyle, ObjectFit, StyledText, div, img, px, rgb};
 
 use crate::app::AppView;
+use crate::nfo;
 use crate::preview::PreviewContent;
 use crate::state::PreviewView;
 use crate::syntax::Syntax;
@@ -38,6 +39,8 @@ impl AppView {
             PreviewContent::Markdown { blocks, .. } => {
                 markdown_view(blocks, theme, preview.path.as_deref(), cx)
             }
+            PreviewContent::Nfo(document) => nfo_view(document, theme),
+            PreviewContent::Hex(hex) => hex_view(&hex.text, theme),
             PreviewContent::Image { path } => image_view(path, self.image_zoom),
             PreviewContent::Unsupported(message) => div()
                 .text_sm()
@@ -187,6 +190,8 @@ fn plain_text(text: &str, theme: Theme) -> AnyElement {
 fn preview_language(preview: &PreviewView) -> Option<&'static str> {
     match &preview.content {
         PreviewContent::Markdown { .. } => Some("Markdown"),
+        PreviewContent::Nfo(_) => Some("NFO"),
+        PreviewContent::Hex(_) => Some("Hex"),
         PreviewContent::Text(text) => {
             let path = preview.path.as_deref().unwrap_or_else(|| Path::new(""));
             let syntax = Syntax::detect_with_text(path, text);
@@ -217,5 +222,67 @@ fn image_view(path: &Path, zoom: f32) -> AnyElement {
         .h_full()
         .overflow_scroll()
         .child(content)
+        .into_any_element()
+}
+
+fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement {
+    let highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = document
+        .colors
+        .iter()
+        .map(|span| {
+            (
+                span.range.clone(),
+                HighlightStyle {
+                    color: Some(rgb(nfo::nfo_color(span.color)).into()),
+                    font_weight: span.bold.then_some(gpui::FontWeight::BOLD),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect();
+    let text = document.text.clone();
+    let styled = if highlights.is_empty() {
+        StyledText::new(text)
+    } else {
+        StyledText::new(text).with_highlights(highlights)
+    };
+    div()
+        .id("nfo-scroll")
+        .w_full()
+        .h_full()
+        .overflow_scroll()
+        .bg(rgb(0x07090c))
+        .border_1()
+        .border_color(rgb(theme.border))
+        .p_2()
+        .child(
+            div()
+                .font_family("monospace")
+                .text_xs()
+                .line_height(px(14.))
+                .whitespace_nowrap()
+                .text_color(rgb(nfo::nfo_color(7)))
+                .child(styled),
+        )
+        .into_any_element()
+}
+
+fn hex_view(text: &str, theme: Theme) -> AnyElement {
+    div()
+        .id("hex-scroll")
+        .w_full()
+        .h_full()
+        .overflow_scroll()
+        .bg(rgb(theme.input_bg))
+        .p_2()
+        .child(
+            div()
+                .font_family("monospace")
+                .text_xs()
+                .line_height(px(15.))
+                .whitespace_nowrap()
+                .text_color(rgb(theme.text))
+                .child(StyledText::new(text.to_string())),
+        )
         .into_any_element()
 }

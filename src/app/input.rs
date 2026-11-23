@@ -421,6 +421,17 @@ impl AppView {
         let alt = event.keystroke.modifiers.alt;
         let shift = event.keystroke.modifiers.shift;
 
+        if control && shift && key == "c" {
+            match self.focused {
+                Pane::Fs => self.checksum_fs_selection(cx),
+                Pane::Archive => self.checksum_archive_selection(cx),
+            }
+            return;
+        }
+        if control && shift && key == "v" && self.focused == Pane::Fs {
+            self.verify_checksums(cx);
+            return;
+        }
         if control && shift && key == "f" {
             self.open_search_modal(window, cx);
             return;

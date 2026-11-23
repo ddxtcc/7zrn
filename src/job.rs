@@ -16,6 +16,8 @@ pub enum JobKind {
     Test,
     Create,
     Modify,
+    Checksum,
+    Verify,
 }
 
 #[derive(Clone, Debug)]
@@ -39,6 +41,12 @@ pub enum JobPayload {
     Nested {
         path: std::path::PathBuf,
         title: String,
+    },
+    Checksums(Vec<crate::checksum::ChecksumEntry>),
+    Verified {
+        summary: String,
+        failed: usize,
+        missing: usize,
     },
 }
 

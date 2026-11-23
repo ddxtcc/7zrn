@@ -94,13 +94,19 @@ impl AppView {
         password: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        let needs_password = !matches!(action, PendingAction::List { .. })
-            && self.archive.password.is_none()
-            && self
-                .archive
-                .listing
-                .as_ref()
-                .is_some_and(|listing| listing.entries.iter().any(|entry| entry.encrypted));
+        let needs_password =
+            match &action {
+                PendingAction::List { .. } => false,
+                PendingAction::Checksums {
+                    source: ChecksumSource::Fs { .. },
+                } => false,
+                _ => {
+                    self.archive.password.is_none()
+                        && self.archive.listing.as_ref().is_some_and(|listing| {
+                            listing.entries.iter().any(|entry| entry.encrypted)
+                        })
+                }
+            };
         if needs_password {
             self.request_password(action, None, cx);
             return;
@@ -315,6 +321,43 @@ impl AppView {
                     cx,
                 );
             }
+            PendingAction::Checksums { source } => {
+                let label = "Computing checksums".to_string();
+                let password = password.clone();
+                self.start_job(
+                    JobKind::Checksum,
+                    label,
+                    move |job| {
+                        let entries = match source {
+                            ChecksumSource::Fs { paths } => crate::checksum::hash_files(&paths)?,
+                            ChecksumSource::Archive {
+                                archive,
+                                format,
+                                dest,
+                                raw_names,
+                            } => {
+                                std::fs::create_dir_all(&dest).map_err(|error| {
+                                    format!("Could not create {}: {error}", dest.display())
+                                })?;
+                                let mut cmd = archive::extract_command(
+                                    &archive,
+                                    format,
+                                    &dest,
+                                    &raw_names,
+                                    password.as_deref(),
+                                )?;
+                                job::run_command(&mut cmd, &job)?;
+                                let entries = crate::checksum::hash_tree(&dest)?;
+                                let _ = std::fs::remove_dir_all(&dest);
+                                entries
+                            }
+                        };
+                        job::note(&job, format!("Hashed {} file(s)", entries.len()));
+                        Ok(JobPayload::Checksums(entries))
+                    },
+                    cx,
+                );
+            }
             PendingAction::Delete {
                 archive,
                 format,
@@ -485,6 +528,30 @@ impl AppView {
                     JobPayload::Nested { path, title } => {
                         self.set_message(format!("Opened nested archive {title}"), false);
                         self.open_archive_in_new_tab(path, cx);
+                    }
+                    JobPayload::Verified {
+                        summary,
+                        failed,
+                        missing,
+                    } => {
+                        let clean = failed == 0 && missing == 0;
+                        self.set_message(
+                            if clean {
+                                "Checksum verification passed"
+                            } else {
+                                "Checksum verification found problems"
+                            },
+                            !clean,
+                        );
+                        self.modal = Some(Modal::Info {
+                            title: "Checksum verification".into(),
+                            body: summary,
+                            error: false,
+                        });
+                    }
+                    JobPayload::Checksums(entries) => {
+                        self.set_message(format!("Hashed {} file(s)", entries.len()), false);
+                        self.modal = Some(Modal::Checksums { entries });
                     }
                     JobPayload::Tested { summary } => {
                         self.set_message("Archive test passed", false);
