@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-11-23
 
 - Verify checksum manifests inside archives without extracting the whole archive
 - Add SHA256SUMS files to the open archive from the checksum modal
