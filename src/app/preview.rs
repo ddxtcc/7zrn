@@ -89,6 +89,7 @@ impl AppView {
         let Some(child) = children.get(index).cloned() else {
             return;
         };
+        self.auto_nfo_full = true;
         let key = self.archive.key_for(&child.name);
         self.archive.active = Some(index);
         self.archive.anchor = Some(index);
@@ -208,12 +209,18 @@ impl AppView {
                             }
                             match result {
                                 Ok((path, content)) => {
+                                    let nfo = matches!(content, PreviewContent::Nfo(_));
                                     if let Some(preview) = &mut this.preview {
                                         preview.path = Some(path);
                                         preview.content = content;
                                     }
+                                    if nfo && this.auto_nfo_full {
+                                        this.auto_nfo_full = false;
+                                        this.open_nfo_full(cx);
+                                    }
                                 }
                                 Err(error) => {
+                                    this.auto_nfo_full = false;
                                     if let Some(preview) = &mut this.preview {
                                         preview.content = PreviewContent::Error(error);
                                     }

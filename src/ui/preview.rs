@@ -264,8 +264,8 @@ pub(crate) fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement 
         .p_2()
         .child(
             div()
-                .font_family("monospace")
-                .text_xs()
+                .font_family("DejaVu Sans Mono")
+                .text_size(px(13.))
                 .line_height(px(16.))
                 .whitespace_nowrap()
                 .text_color(rgb(nfo::nfo_color(7)))
