@@ -20,7 +20,7 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - Old-school NFO viewer with CP437 and ANSI decoding, fixed 80-column layout, automatic root-NFO preview
 - RAR and RAR5 listing and extraction through 7z (read-only)
 - Hex preview for binary files with offsets, ASCII side channel, and byte-class colors
-- Audio previews with tags, duration, bitrate, codec, sample rate, channels, cover art, and play/stop controls
+- Audio previews with tags, duration, bitrate, codec, sample rate, channels, cover art, play/stop controls, and playback progress
 - SHA-256, SHA-1, MD5, and CRC32 checksums with copy, SHA256SUMS save, and manifest verification
 - Verify checksum manifests inside archives and add SHA256SUMS to archives
 - Cross-pane move with confirmation for Files to archive and archive to Files
@@ -99,7 +99,7 @@ makepkg -si
 ```
 
 The package is named `sevenzrn-git` and tracks the main branch. A stable
-PKGBUILD can be based on the v0.8.0 tag. It depends on `7zip`, `tar`, and the
+PKGBUILD can be based on the v0.8.1 tag. It depends on `7zip`, `tar`, and the
 GPUI runtime libraries.
 
 Flatpak packaging is in `packaging/flatpak`. See

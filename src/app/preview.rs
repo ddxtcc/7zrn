@@ -429,6 +429,7 @@ impl AppView {
         match child {
             Ok(child) => {
                 self.audio = Some(child);
+                self.audio_started = Some(std::time::Instant::now());
                 self.set_message(format!("Playing {}", path.display()), false);
                 cx.spawn(async move |this, cx| {
                     loop {
@@ -443,11 +444,15 @@ impl AppView {
                             match child.try_wait() {
                                 Ok(Some(_)) | Err(_) => {
                                     this.audio = None;
+                                    this.audio_started = None;
                                     this.set_message("Audio finished", false);
                                     cx.notify();
                                     true
                                 }
-                                Ok(None) => false,
+                                Ok(None) => {
+                                    cx.notify();
+                                    false
+                                }
                             }
                         });
                         if !matches!(finished, Ok(false)) {
@@ -469,6 +474,7 @@ impl AppView {
 
     pub(crate) fn stop_audio(&mut self) {
         self.audio_generation = self.audio_generation.wrapping_add(1);
+        self.audio_started = None;
         if let Some(mut child) = self.audio.take() {
             let _ = child.kill();
             let _ = child.wait();

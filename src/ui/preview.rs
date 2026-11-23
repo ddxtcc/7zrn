@@ -24,11 +24,29 @@ impl AppView {
         let has_path = preview.path.is_some();
         let language = preview_language(preview);
         let body: AnyElement = match &preview.content {
-            PreviewContent::Loading => div()
-                .text_sm()
-                .text_color(rgb(theme.muted))
-                .child("Preparing preview…")
-                .into_any_element(),
+            PreviewContent::Loading => {
+                let width = 180.0;
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(theme.muted))
+                            .child("Preparing preview…"),
+                    )
+                    .child(
+                        div()
+                            .w(px(width))
+                            .h(px(4.))
+                            .rounded(px(2.))
+                            .bg(rgb(theme.border))
+                            .overflow_hidden()
+                            .child(div().w(px(width * 0.35)).h_full().bg(rgb(theme.accent))),
+                    )
+                    .into_any_element()
+            }
             PreviewContent::Text(text) => {
                 let path = preview.path.as_deref().unwrap_or_else(|| Path::new(""));
                 let syntax = Syntax::detect_with_text(path, text);
@@ -463,6 +481,20 @@ impl AppView {
             },
         );
         let playing = self.audio.is_some();
+        let audio_progress = self
+            .audio_started
+            .zip(info.duration)
+            .map(|(started, duration)| {
+                let elapsed = started.elapsed().as_secs_f64().min(duration);
+                (
+                    elapsed,
+                    if duration > 0.0 {
+                        elapsed / duration
+                    } else {
+                        0.0
+                    },
+                )
+            });
         div()
             .w_full()
             .flex()
@@ -524,7 +556,35 @@ impl AppView {
                                         .child(path.display().to_string()),
                                 )
                             }),
-                    ),
+                    )
+                    .when_some(audio_progress, |this, (elapsed, ratio)| {
+                        let duration = info.duration.unwrap_or(elapsed);
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .h(px(4.))
+                                        .rounded(px(2.))
+                                        .bg(rgb(theme.border))
+                                        .overflow_hidden()
+                                        .child(
+                                            div()
+                                                .w(gpui::relative(ratio as f32))
+                                                .h_full()
+                                                .bg(rgb(theme.accent)),
+                                        ),
+                                )
+                                .child(div().text_xs().text_color(rgb(theme.dim)).child(format!(
+                                    "{} / {}",
+                                    audio::format_duration(elapsed),
+                                    audio::format_duration(duration)
+                                ))),
+                        )
+                    }),
             )
             .into_any_element()
     }

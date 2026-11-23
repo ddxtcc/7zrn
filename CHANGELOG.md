@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 - 2026-11-23
+
+- Add elapsed and total playback progress for audio previews
+- Show a loading bar while large previews are prepared
+
 ## 0.8.0 - 2026-11-23
 
 - Keep automatic NFO previews in the bottom pane instead of opening a modal
