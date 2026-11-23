@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use gpui::Context;
+use gpui::{Context, Window};
 
 use crate::archive::{self, NewFormat};
 use crate::fsops;
@@ -301,6 +301,10 @@ impl AppView {
             cx.notify();
             return;
         }
+        if !self.settings.confirm_move {
+            self.add_paths_with_mode(paths, true, cx);
+            return;
+        }
         self.modal = Some(Modal::MoveToArchive { paths });
         self.edit = None;
         cx.notify();
@@ -323,6 +327,10 @@ impl AppView {
         }
         let raw_names = self.archive.expand_raw(&keys);
         if raw_names.is_empty() {
+            return;
+        }
+        if !self.settings.confirm_move {
+            self.start_move_out(raw_names, keys, self.fs.path.clone(), cx);
             return;
         }
         self.modal = Some(Modal::MoveOut {
@@ -358,6 +366,140 @@ impl AppView {
             None,
             cx,
         );
+    }
+
+    pub(crate) fn open_convert_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(archive) = self.archive.archive.clone() else {
+            self.set_message("Open an archive first", true);
+            cx.notify();
+            return;
+        };
+        let Some(source_format) = self.archive.format else {
+            return;
+        };
+        let format = match source_format {
+            crate::archive::Format::Zip => crate::archive::NewFormat::Zip,
+            crate::archive::Format::Tar => crate::archive::NewFormat::Tar,
+            crate::archive::Format::TarGz => crate::archive::NewFormat::TarGz,
+            crate::archive::Format::TarBz2 => crate::archive::NewFormat::TarBz2,
+            crate::archive::Format::TarXz => crate::archive::NewFormat::TarXz,
+            crate::archive::Format::TarZst => crate::archive::NewFormat::TarZst,
+            _ => crate::archive::NewFormat::SevenZ,
+        };
+        let source_name = archive
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("archive");
+        let stem = source_name
+            .split_once('.')
+            .map(|(stem, _)| stem)
+            .unwrap_or(source_name);
+        let dest = archive
+            .with_file_name(format!("{stem}.converted.{}", format.ext()))
+            .display()
+            .to_string();
+        self.modal = Some(Modal::Convert {
+            dest: dest.clone(),
+            format,
+            compression: self.settings.default_compression,
+            password: String::new(),
+            split: String::new(),
+            error: None,
+        });
+        self.begin_edit(EditTarget::ConvertDest, dest, window, cx);
+    }
+
+    pub(crate) fn start_conversion(
+        &mut self,
+        dest: String,
+        format: NewFormat,
+        compression: u8,
+        password: String,
+        split: String,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let Some(archive) = self.archive.archive.clone() else {
+            return Err("Open an archive first".into());
+        };
+        let Some(source_format) = self.archive.format else {
+            return Err("Unknown source format".into());
+        };
+        let dest = fsops::resolve_path(&dest, &self.fs.path);
+        if dest == archive {
+            return Err("Choose a different output path".into());
+        }
+        if dest.exists() {
+            return Err(format!("{} already exists", dest.display()));
+        }
+        let mut dest = dest;
+        let ext = format.ext();
+        if !dest
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .ends_with(&format!(".{ext}"))
+        {
+            dest = dest.with_file_name(format!(
+                "{}.{ext}",
+                dest.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("archive")
+            ));
+        }
+        let options = archive::CreateOptions {
+            compression,
+            password: (!password.is_empty()).then(|| password.clone()),
+            split: (!split.trim().is_empty()).then(|| split.trim().to_string()),
+            excludes: Vec::new(),
+        };
+        self.execute_action(
+            PendingAction::Convert {
+                archive,
+                source_format,
+                dest,
+                format,
+                options,
+            },
+            None,
+            cx,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn set_convert_format(&mut self, format: NewFormat, cx: &mut Context<Self>) {
+        if let Some(Modal::Convert {
+            dest,
+            format: current,
+            error,
+            ..
+        }) = &mut self.modal
+        {
+            *current = format;
+            *error = None;
+            let base = dest.rsplit_once('.').map(|(base, _)| base).unwrap_or(dest);
+            *dest = format!("{base}.{}", format.ext());
+            if let Some(edit) = self
+                .edit
+                .as_mut()
+                .filter(|edit| edit.target == EditTarget::ConvertDest)
+            {
+                edit.text = dest.clone();
+                edit.cursor = edit.text.len();
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn set_convert_compression(&mut self, compression: u8, cx: &mut Context<Self>) {
+        if let Some(Modal::Convert {
+            compression: current,
+            ..
+        }) = &mut self.modal
+        {
+            *current = compression;
+        }
+        cx.notify();
     }
 
     pub(crate) fn test_archive(&mut self, cx: &mut Context<Self>) {

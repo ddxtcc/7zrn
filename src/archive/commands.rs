@@ -316,14 +316,22 @@ pub fn apply_edit(
     format: Format,
     edit: ArchiveEdit,
     password: Option<&str>,
+    compression: u8,
+    backup: bool,
     job: &SharedJob,
 ) -> Result<(), String> {
     if !format.can_modify() {
         return Err(format!("{} archives are read-only", format.label()));
     }
-    repack_any(archive, format, password, job, |root| {
-        apply_edit_in(root, edit, job)
-    })
+    repack_any(
+        archive,
+        format,
+        password,
+        compression,
+        backup,
+        job,
+        |root| apply_edit_in(root, edit, job),
+    )
 }
 
 fn apply_edit_in(root: &Path, edit: ArchiveEdit, job: &SharedJob) -> Result<(), String> {
@@ -480,6 +488,8 @@ fn repack_any<F>(
     archive: &Path,
     format: Format,
     password: Option<&str>,
+    compression: u8,
+    backup: bool,
     job: &SharedJob,
     mutate: F,
 ) -> Result<(), String>
@@ -526,18 +536,13 @@ where
         } else {
             let kind = if format == Format::Zip { "zip" } else { "7z" };
             let mut create = Command::new(SEVEN_ZIP);
-            create.args([
-                "a",
-                "-y",
-                "-bsp1",
-                "-bso1",
-                "-bse1",
-                "-spd",
-                "-mx=5",
-                "-sccUTF-8",
-            ]);
+            create.args(["a", "-y", "-bsp1", "-bso1", "-bse1", "-spd", "-sccUTF-8"]);
+            create.arg(format!("-mx={}", compression.min(9)));
             create.arg(format!("-t{kind}"));
             apply_password_if_present(&mut create, password);
+            if password.is_some() && format == Format::SevenZ {
+                create.arg("-mhe=on");
+            }
             create.arg("--").arg(&out);
             let names = fs::read_dir(&work_dir)
                 .map_err(|error| format!("Could not read temporary directory: {error}"))?;
@@ -551,6 +556,17 @@ where
         }
         if !out.is_file() {
             return Err("Archive rebuild produced no output".into());
+        }
+        if backup {
+            let name = archive
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("archive");
+            let backup_path = archive.with_file_name(format!("{name}.bak"));
+            fs::copy(archive, &backup_path).map_err(|error| {
+                format!("Could not write backup {}: {error}", backup_path.display())
+            })?;
+            job::note(job, format!("Backup written to {}", backup_path.display()));
         }
         fs::rename(&out, archive).map_err(|error| {
             format!(

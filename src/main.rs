@@ -35,7 +35,7 @@ fn main() {
                 .unwrap_or_else(|| cwd.clone()),
             None => cwd,
         };
-        let restore_session = target.is_none();
+        let restore_session = target.is_none() && settings::Settings::load().restore_session;
         let bounds = Bounds::centered(None, size(px(1220.0), px(780.0)), cx);
         let Ok(window) = cx.open_window(
             WindowOptions {

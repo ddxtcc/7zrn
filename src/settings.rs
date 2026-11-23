@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::archive::NewFormat;
 use crate::columns::{ArchiveColumns, ColumnId, FsColumns, max_width, min_width};
 use crate::fsops;
 use crate::theme::ThemeId;
@@ -12,15 +13,29 @@ pub(crate) enum Setting {
     ShowHidden,
     OpenAfterExtract,
     AutoPreview,
+    ConfirmMove,
+    AutoNfoFull,
+    NfoColors,
+    HexColors,
+    CodeWrap,
+    BackupEdits,
+    RestoreSession,
 }
 
 impl Setting {
-    pub(crate) const ALL: [Setting; 5] = [
+    pub(crate) const ALL: [Setting; 12] = [
         Setting::OpenAfterExtract,
         Setting::SingleClickOpen,
         Setting::AutoPreview,
         Setting::ConfirmDelete,
+        Setting::ConfirmMove,
         Setting::ShowHidden,
+        Setting::AutoNfoFull,
+        Setting::NfoColors,
+        Setting::HexColors,
+        Setting::CodeWrap,
+        Setting::BackupEdits,
+        Setting::RestoreSession,
     ];
 
     pub(crate) fn label(self) -> &'static str {
@@ -30,6 +45,13 @@ impl Setting {
             Setting::ShowHidden => "Show hidden files",
             Setting::OpenAfterExtract => "Open destination after extraction",
             Setting::AutoPreview => "Preview files when selected",
+            Setting::ConfirmMove => "Confirm cross-pane moves",
+            Setting::AutoNfoFull => "Open root NFO in full view",
+            Setting::NfoColors => "Use ANSI colors in NFO previews",
+            Setting::HexColors => "Use byte colors in hex previews",
+            Setting::CodeWrap => "Wrap code previews by default",
+            Setting::BackupEdits => "Keep a .bak before archive edits",
+            Setting::RestoreSession => "Restore tabs on startup",
         }
     }
 
@@ -44,6 +66,13 @@ impl Setting {
                 "Navigate to the extracted files and highlight them in Files."
             }
             Setting::AutoPreview => "Show files up to 4 MiB in the preview pane on click.",
+            Setting::ConfirmMove => "Ask before deleting sources during a move.",
+            Setting::AutoNfoFull => "Open the full NFO viewer when an archive contains a root NFO.",
+            Setting::NfoColors => "Preserve ANSI colors and bold attributes in NFO art.",
+            Setting::HexColors => "Color zeroes, controls, printable bytes, and high bytes.",
+            Setting::CodeWrap => "Disable horizontal scrolling for long code lines.",
+            Setting::BackupEdits => "Copy the archive to .bak before replacing it.",
+            Setting::RestoreSession => "Reopen tabs and archive paths on the next launch.",
         }
     }
 
@@ -54,6 +83,13 @@ impl Setting {
             Setting::ShowHidden => settings.show_hidden,
             Setting::OpenAfterExtract => settings.open_after_extract,
             Setting::AutoPreview => settings.auto_preview,
+            Setting::ConfirmMove => settings.confirm_move,
+            Setting::AutoNfoFull => settings.auto_nfo_full,
+            Setting::NfoColors => settings.nfo_colors,
+            Setting::HexColors => settings.hex_colors,
+            Setting::CodeWrap => settings.code_wrap,
+            Setting::BackupEdits => settings.backup_edits,
+            Setting::RestoreSession => settings.restore_session,
         }
     }
 
@@ -64,6 +100,13 @@ impl Setting {
             Setting::ShowHidden => settings.show_hidden = value,
             Setting::OpenAfterExtract => settings.open_after_extract = value,
             Setting::AutoPreview => settings.auto_preview = value,
+            Setting::ConfirmMove => settings.confirm_move = value,
+            Setting::AutoNfoFull => settings.auto_nfo_full = value,
+            Setting::NfoColors => settings.nfo_colors = value,
+            Setting::HexColors => settings.hex_colors = value,
+            Setting::CodeWrap => settings.code_wrap = value,
+            Setting::BackupEdits => settings.backup_edits = value,
+            Setting::RestoreSession => settings.restore_session = value,
         }
     }
 }
@@ -75,6 +118,17 @@ pub(crate) struct Settings {
     pub(crate) show_hidden: bool,
     pub(crate) open_after_extract: bool,
     pub(crate) auto_preview: bool,
+    pub(crate) confirm_move: bool,
+    pub(crate) auto_nfo_full: bool,
+    pub(crate) nfo_colors: bool,
+    pub(crate) hex_colors: bool,
+    pub(crate) code_wrap: bool,
+    pub(crate) backup_edits: bool,
+    pub(crate) restore_session: bool,
+    pub(crate) nfo_font_size: f32,
+    pub(crate) edit_compression: u8,
+    pub(crate) default_format: NewFormat,
+    pub(crate) default_compression: u8,
     pub(crate) theme: ThemeId,
     pub(crate) split: f32,
     pub(crate) preview_ratio: f32,
@@ -90,6 +144,17 @@ impl Default for Settings {
             show_hidden: false,
             open_after_extract: true,
             auto_preview: true,
+            confirm_move: true,
+            auto_nfo_full: true,
+            nfo_colors: true,
+            hex_colors: true,
+            code_wrap: false,
+            backup_edits: true,
+            restore_session: true,
+            nfo_font_size: 13.0,
+            edit_compression: 5,
+            default_format: NewFormat::SevenZ,
+            default_compression: 5,
             theme: ThemeId::Dark,
             split: 0.5,
             preview_ratio: 0.32,
@@ -121,6 +186,39 @@ impl Settings {
                 "show_hidden" => settings.show_hidden = enabled,
                 "open_after_extract" => settings.open_after_extract = enabled,
                 "auto_preview" => settings.auto_preview = enabled,
+                "confirm_move" => settings.confirm_move = enabled,
+                "auto_nfo_full" => settings.auto_nfo_full = enabled,
+                "nfo_colors" => settings.nfo_colors = enabled,
+                "hex_colors" => settings.hex_colors = enabled,
+                "code_wrap" => settings.code_wrap = enabled,
+                "backup_edits" => settings.backup_edits = enabled,
+                "restore_session" => settings.restore_session = enabled,
+                "nfo_font_size" => {
+                    if let Ok(value) = raw.parse::<f32>()
+                        && value.is_finite()
+                    {
+                        settings.nfo_font_size = value.clamp(10.0, 22.0);
+                    }
+                }
+                "edit_compression" => {
+                    if let Ok(value) = raw.parse::<u8>() {
+                        settings.edit_compression = value.min(9);
+                    }
+                }
+                "default_compression" => {
+                    if let Ok(value) = raw.parse::<u8>() {
+                        settings.default_compression = value.min(9);
+                    }
+                }
+                "default_format" => {
+                    if let Some(format) = NewFormat::ALL
+                        .iter()
+                        .find(|format| format.label() == raw)
+                        .copied()
+                    {
+                        settings.default_format = format;
+                    }
+                }
                 "theme" => {
                     if let Some(theme) = ThemeId::parse(raw) {
                         settings.theme = theme;
@@ -199,12 +297,23 @@ impl Settings {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create {}: {error}", parent.display()))?;
         let contents = format!(
-            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
+            "single_click_open={}\nconfirm_delete={}\nshow_hidden={}\nopen_after_extract={}\nauto_preview={}\nconfirm_move={}\nauto_nfo_full={}\nnfo_colors={}\nhex_colors={}\ncode_wrap={}\nbackup_edits={}\nrestore_session={}\nnfo_font_size={:.2}\nedit_compression={}\ndefault_format={}\ndefault_compression={}\ntheme={}\nsplit={:.4}\npreview_ratio={:.4}\nfs_name={:.1}\nfs_size={:.1}\nfs_modified={:.1}\nfs_kind={:.1}\narchive_name={:.1}\narchive_size={:.1}\narchive_packed={:.1}\narchive_modified={:.1}\narchive_method={:.1}\n",
             self.single_click_open,
             self.confirm_delete,
             self.show_hidden,
             self.open_after_extract,
             self.auto_preview,
+            self.confirm_move,
+            self.auto_nfo_full,
+            self.nfo_colors,
+            self.hex_colors,
+            self.code_wrap,
+            self.backup_edits,
+            self.restore_session,
+            self.nfo_font_size,
+            self.edit_compression,
+            self.default_format.label(),
+            self.default_compression,
             self.theme.key(),
             self.split,
             self.preview_ratio,
@@ -269,6 +378,17 @@ mod tests {
             show_hidden: true,
             open_after_extract: false,
             auto_preview: false,
+            confirm_move: false,
+            auto_nfo_full: false,
+            nfo_colors: false,
+            hex_colors: false,
+            code_wrap: true,
+            backup_edits: false,
+            restore_session: false,
+            nfo_font_size: 15.0,
+            edit_compression: 7,
+            default_format: NewFormat::Zip,
+            default_compression: 3,
             theme: ThemeId::Nord,
             split: 0.37,
             preview_ratio: 0.41,
@@ -293,6 +413,17 @@ mod tests {
         assert!(loaded.show_hidden);
         assert!(!loaded.open_after_extract);
         assert!(!loaded.auto_preview);
+        assert!(!loaded.confirm_move);
+        assert!(!loaded.auto_nfo_full);
+        assert!(!loaded.nfo_colors);
+        assert!(!loaded.hex_colors);
+        assert!(loaded.code_wrap);
+        assert!(!loaded.backup_edits);
+        assert!(!loaded.restore_session);
+        assert_eq!(loaded.nfo_font_size, 15.0);
+        assert_eq!(loaded.edit_compression, 7);
+        assert_eq!(loaded.default_format, NewFormat::Zip);
+        assert_eq!(loaded.default_compression, 3);
         assert_eq!(loaded.theme, ThemeId::Nord);
         assert!((loaded.split - 0.37).abs() < 0.001);
         assert!((loaded.preview_ratio - 0.41).abs() < 0.001);

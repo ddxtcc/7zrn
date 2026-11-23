@@ -23,6 +23,9 @@ A native GPUI archive manager for Linux, powered by the 7-Zip and tar command li
 - SHA-256, SHA-1, MD5, and CRC32 checksums with copy, SHA256SUMS save, and manifest verification
 - Verify checksum manifests inside archives and add SHA256SUMS to archives
 - Cross-pane move with confirmation for Files to archive and archive to Files
+- Archive conversion and recompression with format, compression, password, and split options
+- Merge numbered archive volumes
+- Expanded settings for preview, editing, moves, defaults, backups, and session restore
 - Automatic preview of clicked files up to 4 MiB, configurable in Settings
 - Open files directly, extracting only the selected archive entry when needed
 - Right-click context menus in both panes

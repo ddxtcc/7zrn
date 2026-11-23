@@ -203,6 +203,34 @@ impl AppView {
             } => {
                 self.start_delete(raw_names.clone(), display_names.clone(), cx);
             }
+            Modal::Convert {
+                dest,
+                format,
+                compression,
+                password,
+                split,
+                error,
+            } => match self.start_conversion(
+                dest.clone(),
+                *format,
+                *compression,
+                password.clone(),
+                split.clone(),
+                cx,
+            ) {
+                Ok(()) => {}
+                Err(message) => {
+                    *error = Some(message);
+                    let text = dest.clone();
+                    let cursor = text.len();
+                    self.modal = Some(modal);
+                    self.edit = Some(EditState {
+                        target: EditTarget::ConvertDest,
+                        text,
+                        cursor,
+                    });
+                }
+            },
             Modal::MoveToArchive { paths } => {
                 self.add_paths_with_mode(paths.clone(), true, cx);
             }
@@ -540,6 +568,25 @@ impl AppView {
             Some(Modal::Password { password, .. }) => {
                 let text = password.clone();
                 self.begin_edit(EditTarget::Password, text, window, cx);
+            }
+            Some(Modal::Convert {
+                dest,
+                password,
+                split,
+                ..
+            }) => {
+                let current = self.edit.as_ref().map(|edit| edit.target);
+                let next = match current {
+                    Some(EditTarget::ConvertDest) => EditTarget::ConvertPassword,
+                    Some(EditTarget::ConvertPassword) => EditTarget::ConvertSplit,
+                    _ => EditTarget::ConvertDest,
+                };
+                let text = match next {
+                    EditTarget::ConvertPassword => password.clone(),
+                    EditTarget::ConvertSplit => split.clone(),
+                    _ => dest.clone(),
+                };
+                self.begin_edit(next, text, window, cx);
             }
             Some(Modal::ArchiveEdit { value, .. }) => {
                 let text = value.clone();

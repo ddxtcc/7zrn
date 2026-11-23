@@ -775,6 +775,163 @@ impl AppView {
             Modal::TestPassed { stats } => self.render_test_passed_modal(stats, cx),
             Modal::Checksums { entries } => self.render_checksums_modal(entries, cx),
             Modal::Nfo { title, document } => self.render_nfo_modal(title, document, cx),
+            Modal::Convert {
+                dest,
+                format,
+                compression,
+                password,
+                split,
+                error,
+            } => {
+                let dest_text = match &self.edit {
+                    Some(edit) if edit.target == EditTarget::ConvertDest => edit.text.clone(),
+                    _ => dest.clone(),
+                };
+                let password_text = match &self.edit {
+                    Some(edit) if edit.target == EditTarget::ConvertPassword => edit.text.clone(),
+                    _ => password.clone(),
+                };
+                let split_text = match &self.edit {
+                    Some(edit) if edit.target == EditTarget::ConvertSplit => edit.text.clone(),
+                    _ => split.clone(),
+                };
+                let active = |target: EditTarget| {
+                    self.edit.as_ref().is_some_and(|edit| edit.target == target)
+                };
+                let cursor = |target: EditTarget| {
+                    self.edit
+                        .as_ref()
+                        .filter(|edit| edit.target == target)
+                        .map(|edit| edit.cursor)
+                        .unwrap_or(0)
+                };
+                let selected_format = *format;
+                let mut formats = div().flex().flex_wrap().gap_2();
+                for option in NewFormat::ALL {
+                    formats = formats.child(self.chip(
+                        format_chip_id(option),
+                        option.label(),
+                        option == selected_format,
+                        cx,
+                        move |this, _, cx| this.set_convert_format(option, cx),
+                    ));
+                }
+                let mut levels = div().flex().flex_wrap().gap_2();
+                for (level, label, id) in [
+                    (0u8, "Store", "convert-level-store"),
+                    (1, "Fast", "convert-level-fast"),
+                    (5, "Normal", "convert-level-normal"),
+                    (9, "Max", "convert-level-max"),
+                ] {
+                    levels = levels.child(self.chip(
+                        id,
+                        label,
+                        *compression == level,
+                        cx,
+                        move |this, _, cx| this.set_convert_compression(level, cx),
+                    ));
+                }
+                self.modal_panel(
+                    "Convert archive",
+                    640.0,
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(theme.muted))
+                                .child("Extract the source archive and create a new archive."),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(theme.dim))
+                                .child("Output path"),
+                        )
+                        .child(self.input_field(
+                            InputField {
+                                id: "convert-dest",
+                                text: &dest_text,
+                                placeholder: "Output archive path",
+                                active: active(EditTarget::ConvertDest),
+                                cursor: cursor(EditTarget::ConvertDest),
+                                width: None,
+                                target: Some(EditTarget::ConvertDest),
+                                click_text: dest_text.clone(),
+                            },
+                            cx,
+                        ))
+                        .child(div().text_xs().text_color(rgb(theme.dim)).child("Format"))
+                        .child(formats)
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(theme.dim))
+                                .child("Compression"),
+                        )
+                        .child(levels)
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(theme.dim))
+                                .child("Output password (7z and zip only)"),
+                        )
+                        .child(self.input_field(
+                            InputField {
+                                id: "convert-password",
+                                text: &password_text,
+                                placeholder: "Optional password",
+                                active: active(EditTarget::ConvertPassword),
+                                cursor: cursor(EditTarget::ConvertPassword),
+                                width: None,
+                                target: Some(EditTarget::ConvertPassword),
+                                click_text: password_text.clone(),
+                            },
+                            cx,
+                        ))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(theme.dim))
+                                .child("Split volumes (7z only, e.g. 100m)"),
+                        )
+                        .child(self.input_field(
+                            InputField {
+                                id: "convert-split",
+                                text: &split_text,
+                                placeholder: "Optional volume size",
+                                active: active(EditTarget::ConvertSplit),
+                                cursor: cursor(EditTarget::ConvertSplit),
+                                width: None,
+                                target: Some(EditTarget::ConvertSplit),
+                                click_text: split_text.clone(),
+                            },
+                            cx,
+                        ))
+                        .when_some(error.clone(), |this, error| {
+                            this.child(div().text_xs().text_color(rgb(theme.red)).child(error))
+                        }),
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            self.btn("convert-cancel", "Cancel", true, cx, |this, _, cx| {
+                                this.close_modal(cx)
+                            }),
+                        )
+                        .child(self.primary_btn(
+                            "convert-go",
+                            "Convert",
+                            false,
+                            cx,
+                            |this, window, cx| this.submit_modal(window, cx),
+                        )),
+                    cx,
+                )
+            }
             Modal::MoveToArchive { paths } => {
                 let count = paths.len();
                 self.modal_panel(

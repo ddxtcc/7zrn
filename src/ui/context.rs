@@ -19,7 +19,7 @@ impl AppView {
         }
         let theme = self.theme;
         let width = 224.0;
-        let height = 17.0 * 26.0 + 8.0;
+        let height = 19.0 * 26.0 + 8.0;
         let window_width = f32::from(window.bounds().size.width);
         let window_height = f32::from(window.bounds().size.height);
         let x = menu.x.clamp(4.0, (window_width - width - 8.0).max(4.0));
@@ -47,6 +47,7 @@ impl AppView {
                 let can_copy = active.is_some() || !self.fs.selected.is_empty();
                 let can_checksum = !self.fs_action_paths().is_empty();
                 let can_verify = self.can_verify_active();
+                let can_merge = self.can_merge_volumes();
                 div()
                     .flex()
                     .flex_col()
@@ -106,6 +107,13 @@ impl AppView {
                         can_verify,
                         cx,
                         |this, _, cx| this.verify_checksums(cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-fs-merge",
+                        "Merge volumes",
+                        can_merge,
+                        cx,
+                        |this, _, cx| this.merge_volumes(cx),
                     ))
                     .child(self.context_row(
                         "ctx-fs-hidden",
@@ -237,6 +245,13 @@ impl AppView {
                         can_verify,
                         cx,
                         |this, _, cx| this.verify_archive_checksums(cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-arc-convert",
+                        "Convert…",
+                        has_archive,
+                        cx,
+                        |this, window, cx| this.open_convert_modal(window, cx),
                     ))
                     .child(self.context_row(
                         "ctx-arc-test",

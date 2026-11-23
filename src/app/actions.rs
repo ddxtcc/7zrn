@@ -320,11 +320,21 @@ impl AppView {
             } => {
                 let label = "Updating archive".to_string();
                 let password = password.clone();
+                let compression = self.settings.edit_compression;
+                let backup = self.settings.backup_edits;
                 self.start_job(
                     JobKind::Modify,
                     label,
                     move |job| {
-                        archive::apply_edit(&archive, format, edit, password.as_deref(), &job)?;
+                        archive::apply_edit(
+                            &archive,
+                            format,
+                            edit,
+                            password.as_deref(),
+                            compression,
+                            backup,
+                            &job,
+                        )?;
                         Ok(JobPayload::Modified)
                     },
                     cx,
@@ -442,6 +452,64 @@ impl AppView {
                             job::run_command(&mut delete, &job)?;
                         }
                         Ok(JobPayload::MovedOut { dest, count, names })
+                    },
+                    cx,
+                );
+            }
+            PendingAction::Convert {
+                archive,
+                source_format,
+                dest,
+                format,
+                options,
+            } => {
+                let label = format!("Converting {}", archive.display());
+                let password = password.clone();
+                self.start_job(
+                    JobKind::Create,
+                    label,
+                    move |job| {
+                        let work = std::env::temp_dir().join(format!(
+                            "7zrn-convert-{}-{}",
+                            std::process::id(),
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|duration| duration.as_nanos())
+                                .unwrap_or(0)
+                        ));
+                        std::fs::create_dir_all(&work).map_err(|error| {
+                            format!("Could not create {}: {error}", work.display())
+                        })?;
+                        let result = (|| {
+                            job::note(&job, "Extracting source archive");
+                            let mut extract = archive::extract_command(
+                                &archive,
+                                source_format,
+                                &work,
+                                &[],
+                                password.as_deref(),
+                            )?;
+                            job::run_command(&mut extract, &job)?;
+                            let names: Vec<std::ffi::OsString> = std::fs::read_dir(&work)
+                                .map_err(|error| {
+                                    format!("Could not read {}: {error}", work.display())
+                                })?
+                                .filter_map(Result::ok)
+                                .map(|entry| entry.file_name())
+                                .collect();
+                            job::note(&job, "Creating converted archive");
+                            let mut create =
+                                archive::create_command(&dest, format, &work, &names, &options)?;
+                            job::run_command(&mut create, &job)?;
+                            if !dest.is_file() {
+                                return Err("Conversion produced no output".into());
+                            }
+                            Ok(JobPayload::Created {
+                                archive: dest.clone(),
+                            })
+                        })();
+                        let _ = std::fs::remove_dir_all(&work);
+                        result
                     },
                     cx,
                 );

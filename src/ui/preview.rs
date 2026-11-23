@@ -40,8 +40,13 @@ impl AppView {
             PreviewContent::Markdown { blocks, .. } => {
                 markdown_view(blocks, theme, preview.path.as_deref(), cx)
             }
-            PreviewContent::Nfo(document) => nfo_view(document, theme),
-            PreviewContent::Hex(hex) => hex_view(hex, theme),
+            PreviewContent::Nfo(document) => nfo_view(
+                document,
+                theme,
+                self.settings.nfo_font_size,
+                self.settings.nfo_colors,
+            ),
+            PreviewContent::Hex(hex) => hex_view(hex, theme, self.settings.hex_colors),
             PreviewContent::Image { path } => image_view(path, self.image_zoom),
             PreviewContent::Unsupported(message) => div()
                 .text_sm()
@@ -233,7 +238,12 @@ fn image_view(path: &Path, zoom: f32) -> AnyElement {
         .into_any_element()
 }
 
-pub(crate) fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement {
+pub(crate) fn nfo_view(
+    document: &nfo::NfoDocument,
+    theme: Theme,
+    font_size: f32,
+    colors: bool,
+) -> AnyElement {
     let highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = document
         .colors
         .iter()
@@ -249,10 +259,10 @@ pub(crate) fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement 
         })
         .collect();
     let text = document.text.clone();
-    let styled = if highlights.is_empty() {
-        StyledText::new(text)
-    } else {
+    let styled = if colors && !highlights.is_empty() {
         StyledText::new(text).with_highlights(highlights)
+    } else {
+        StyledText::new(text)
     };
     div()
         .id("nfo-scroll")
@@ -266,8 +276,8 @@ pub(crate) fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement 
         .child(
             div()
                 .font_family("DejaVu Sans Mono")
-                .text_size(px(13.))
-                .line_height(px(16.))
+                .text_size(px(font_size))
+                .line_height(px(font_size + 3.0))
                 .whitespace_nowrap()
                 .text_color(rgb(nfo::nfo_color(7)))
                 .child(styled),
@@ -275,7 +285,7 @@ pub(crate) fn nfo_view(document: &nfo::NfoDocument, theme: Theme) -> AnyElement 
         .into_any_element()
 }
 
-fn hex_view(preview: &HexPreview, theme: Theme) -> AnyElement {
+fn hex_view(preview: &HexPreview, theme: Theme, colors: bool) -> AnyElement {
     let mut text = String::new();
     let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
     let header = hex::header();
@@ -337,7 +347,11 @@ fn hex_view(preview: &HexPreview, theme: Theme) -> AnyElement {
             HighlightStyle::color(rgb(theme.amber).into()),
         ));
     }
-    let styled = StyledText::new(text).with_highlights(highlights);
+    let styled = if colors {
+        StyledText::new(text).with_highlights(highlights)
+    } else {
+        StyledText::new(preview.text())
+    };
     div()
         .id("hex-scroll")
         .w_full()

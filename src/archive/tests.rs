@@ -251,6 +251,8 @@ fn edits_archive_entries() {
                 to: "sub/c.txt".into(),
             },
             None,
+            5,
+            false,
             &job,
         )
         .unwrap();
@@ -271,6 +273,8 @@ fn edits_archive_entries() {
                 dest: "sub".into(),
             },
             None,
+            5,
+            false,
             &job,
         )
         .unwrap();
@@ -291,6 +295,8 @@ fn edits_archive_entries() {
                 dest: "moved".into(),
             },
             None,
+            5,
+            false,
             &job,
         )
         .unwrap();
@@ -310,6 +316,8 @@ fn edits_archive_entries() {
                 path: "empty/nested".into(),
             },
             None,
+            5,
+            false,
             &job,
         )
         .unwrap();

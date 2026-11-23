@@ -13,10 +13,12 @@ impl AppView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let document_copy = document.clone();
-        let body = div()
-            .h(gpui::relative(0.78))
-            .min_h(px(0.))
-            .child(nfo_view(document, self.theme));
+        let body = div().h(gpui::relative(0.78)).min_h(px(0.)).child(nfo_view(
+            document,
+            self.theme,
+            self.settings.nfo_font_size,
+            self.settings.nfo_colors,
+        ));
         self.modal_panel(
             title,
             1000.0,

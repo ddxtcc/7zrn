@@ -89,7 +89,7 @@ impl AppView {
         let Some(child) = children.get(index).cloned() else {
             return;
         };
-        self.auto_nfo_full = true;
+        self.auto_nfo_full = self.settings.auto_nfo_full;
         let key = self.archive.key_for(&child.name);
         self.archive.active = Some(index);
         self.archive.anchor = Some(index);
@@ -325,6 +325,10 @@ impl AppView {
 
     pub(crate) fn toggle_code_wrap(&mut self, cx: &mut Context<Self>) {
         self.code_wrap = !self.code_wrap;
+        self.settings.code_wrap = self.code_wrap;
+        if let Err(error) = self.settings.save() {
+            self.settings_error = Some(error);
+        }
         cx.notify();
     }
 

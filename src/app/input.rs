@@ -120,6 +120,21 @@ impl AppView {
                     *dest = text;
                 }
             }
+            EditTarget::ConvertDest => {
+                if let Some(Modal::Convert { dest, .. }) = &mut self.modal {
+                    *dest = text;
+                }
+            }
+            EditTarget::ConvertPassword => {
+                if let Some(Modal::Convert { password, .. }) = &mut self.modal {
+                    *password = text;
+                }
+            }
+            EditTarget::ConvertSplit => {
+                if let Some(Modal::Convert { split, .. }) = &mut self.modal {
+                    *split = text;
+                }
+            }
             EditTarget::Password => {
                 if let Some(Modal::Password { password, .. }) = &mut self.modal {
                     *password = text;
@@ -176,6 +191,9 @@ impl AppView {
                 | EditTarget::NewSplit
                 | EditTarget::NewExclude
                 | EditTarget::ExtractDest
+                | EditTarget::ConvertDest
+                | EditTarget::ConvertPassword
+                | EditTarget::ConvertSplit
                 | EditTarget::Password
                 | EditTarget::ArchiveEdit
                 | EditTarget::Search
@@ -310,6 +328,9 @@ impl AppView {
             | EditTarget::NewSplit
             | EditTarget::NewExclude
             | EditTarget::ExtractDest
+            | EditTarget::ConvertDest
+            | EditTarget::ConvertPassword
+            | EditTarget::ConvertSplit
             | EditTarget::Password
             | EditTarget::ArchiveEdit => {
                 self.write_edit_text_to_target(edit.target, edit.text);

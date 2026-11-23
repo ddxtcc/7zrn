@@ -26,6 +26,7 @@ mod preview;
 mod search;
 mod selection;
 mod tabs;
+mod volumes;
 
 pub(crate) struct AppView {
     pub(crate) focus_handle: FocusHandle,
@@ -91,7 +92,7 @@ impl AppView {
             preview_generation: 0,
             preview_ratio: settings.preview_ratio,
             preview_drag: None,
-            code_wrap: false,
+            code_wrap: settings.code_wrap,
             image_zoom: 1.0,
             auto_nfo_full: false,
             tabs: vec![Tab::empty()],

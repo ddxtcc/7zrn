@@ -2,8 +2,21 @@ use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, SharedString, div, px, rgb};
 
 use crate::app::AppView;
+use crate::archive::NewFormat;
 use crate::settings::{Setting, Settings};
 use crate::theme::ThemeId;
+
+fn default_format_id(format: NewFormat) -> &'static str {
+    match format {
+        NewFormat::SevenZ => "default-format-7z",
+        NewFormat::Zip => "default-format-zip",
+        NewFormat::Tar => "default-format-tar",
+        NewFormat::TarGz => "default-format-targz",
+        NewFormat::TarBz2 => "default-format-tarbz2",
+        NewFormat::TarXz => "default-format-tarxz",
+        NewFormat::TarZst => "default-format-tarzst",
+    }
+}
 
 fn theme_chip_id(theme: ThemeId) -> &'static str {
     match theme {
@@ -119,6 +132,119 @@ impl AppView {
                 .child(
                     div()
                         .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(div().text_sm().text_color(rgb(theme.text)).child("Preview"))
+                        .child(self.settings_number_row(
+                            "NFO font size",
+                            "Font size used by the NFO viewer.",
+                            &format!("{:.0} px", self.settings.nfo_font_size),
+                            ("settings-nfo-font-dec", "settings-nfo-font-inc"),
+                            cx,
+                            |this, delta, cx| {
+                                this.set_nfo_font_size(
+                                    (this.settings.nfo_font_size + delta).clamp(10.0, 22.0),
+                                    cx,
+                                )
+                            },
+                        )),
+                )
+                .child(div().h(px(1.)).bg(rgb(theme.border)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(theme.text))
+                                .child("Archive editing"),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(rgb(theme.dim))
+                                        .child("Compression level for edited archives"),
+                                )
+                                .child(self.compression_chips(
+                                    [
+                                        "edit-level-store",
+                                        "edit-level-fast",
+                                        "edit-level-normal",
+                                        "edit-level-max",
+                                    ],
+                                    self.settings.edit_compression,
+                                    cx,
+                                    |this, level, cx| this.set_edit_compression(level, cx),
+                                )),
+                        ),
+                )
+                .child(div().h(px(1.)).bg(rgb(theme.border)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(theme.text))
+                                .child("New archive defaults"),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(div().text_xs().text_color(rgb(theme.dim)).child("Format"))
+                                .child({
+                                    let mut formats = div().flex().flex_wrap().gap_2();
+                                    for format in NewFormat::ALL {
+                                        formats = formats.child(self.chip(
+                                            default_format_id(format),
+                                            format.label(),
+                                            self.settings.default_format == format,
+                                            cx,
+                                            move |this, _, cx| this.set_default_format(format, cx),
+                                        ));
+                                    }
+                                    formats
+                                }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(rgb(theme.dim))
+                                        .child("Compression level"),
+                                )
+                                .child(self.compression_chips(
+                                    [
+                                        "default-level-store",
+                                        "default-level-fast",
+                                        "default-level-normal",
+                                        "default-level-max",
+                                    ],
+                                    self.settings.default_compression,
+                                    cx,
+                                    |this, level, cx| this.set_default_compression(level, cx),
+                                )),
+                        ),
+                )
+                .child(div().h(px(1.)).bg(rgb(theme.border)))
+                .child(
+                    div()
+                        .flex()
                         .items_center()
                         .justify_between()
                         .gap_4()
@@ -198,5 +324,93 @@ impl AppView {
             )),
             cx,
         )
+    }
+
+    fn compression_chips<F>(
+        &self,
+        ids: [&'static str; 4],
+        current: u8,
+        cx: &mut Context<Self>,
+        action: F,
+    ) -> AnyElement
+    where
+        F: Fn(&mut Self, u8, &mut Context<Self>) + Clone + 'static,
+    {
+        let mut chips = div().flex().flex_wrap().gap_2();
+        let options = [
+            (0u8, "Store", ids[0]),
+            (1, "Fast", ids[1]),
+            (5, "Normal", ids[2]),
+            (9, "Max", ids[3]),
+        ];
+        for (level, label, id) in options {
+            let action = action.clone();
+            chips = chips.child(
+                self.chip(id, label, current == level, cx, move |this, _, cx| {
+                    action(this, level, cx)
+                }),
+            );
+        }
+        chips.into_any_element()
+    }
+
+    fn settings_number_row<F>(
+        &self,
+        title: &str,
+        description: &str,
+        value: &str,
+        ids: (&'static str, &'static str),
+        cx: &mut Context<Self>,
+        action: F,
+    ) -> AnyElement
+    where
+        F: Fn(&mut Self, f32, &mut Context<Self>) + Clone + 'static,
+    {
+        let theme = self.theme;
+        let dec = action.clone();
+        let inc = action;
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_4()
+            .p_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(theme.text))
+                            .child(title.to_string()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(theme.dim))
+                            .child(description.to_string()),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(self.btn(ids.0, "−", true, cx, move |this, _, cx| {
+                        dec(this, -1.0, cx)
+                    }))
+                    .child(
+                        div()
+                            .w(px(52.))
+                            .text_center()
+                            .text_xs()
+                            .text_color(rgb(theme.text))
+                            .child(value.to_string()),
+                    )
+                    .child(self.btn(ids.1, "+", true, cx, move |this, _, cx| inc(this, 1.0, cx))),
+            )
+            .into_any_element()
     }
 }
