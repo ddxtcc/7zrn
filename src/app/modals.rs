@@ -29,22 +29,23 @@ impl AppView {
             return;
         }
         let base = self.fs.path.clone();
+        let format = self.settings.default_format;
         let suggested = if paths.len() == 1 {
             let name = paths[0]
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("archive");
-            format!("{name}.7z")
+            format!("{name}.{}", format.ext())
         } else {
-            "archive.7z".to_string()
+            format!("archive.{}", format.ext())
         };
         let name = base.join(suggested).display().to_string();
         self.modal = Some(Modal::NewArchive {
-            format: NewFormat::SevenZ,
+            format,
             names,
             base,
             name: name.clone(),
-            compression: 5,
+            compression: self.settings.default_compression,
             password: String::new(),
             split: String::new(),
             excludes: String::new(),
@@ -529,12 +530,14 @@ impl AppView {
     }
 
     pub(crate) fn close_modal(&mut self, cx: &mut Context<Self>) {
+        self.search_generation = self.search_generation.wrapping_add(1);
         self.modal = None;
         self.edit = None;
         cx.notify();
     }
 
     pub(crate) fn focus_modal_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self.edit.as_ref().map(|edit| edit.target);
         if let Some(edit) = self.edit.take() {
             self.write_edit_text_to_target(edit.target, edit.text);
         }
@@ -546,7 +549,6 @@ impl AppView {
                 excludes,
                 ..
             }) => {
-                let current = self.edit.as_ref().map(|edit| edit.target);
                 let next = match current {
                     Some(EditTarget::NewName) => EditTarget::NewPassword,
                     Some(EditTarget::NewPassword) => EditTarget::NewSplit,
@@ -575,7 +577,6 @@ impl AppView {
                 split,
                 ..
             }) => {
-                let current = self.edit.as_ref().map(|edit| edit.target);
                 let next = match current {
                     Some(EditTarget::ConvertDest) => EditTarget::ConvertPassword,
                     Some(EditTarget::ConvertPassword) => EditTarget::ConvertSplit,

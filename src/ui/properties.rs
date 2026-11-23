@@ -15,7 +15,7 @@ impl AppView {
     ) -> AnyElement {
         let theme = self.theme;
         let stats_copy = stats.clone();
-        self.modal_panel(
+        self.modal_panel_scroll(
             "Archive properties",
             760.0,
             stats_body(stats, theme),
@@ -56,7 +56,7 @@ impl AppView {
             .child(stats_body(stats, theme));
         let stats_copy = stats.clone();
         let stats_details = stats.clone();
-        self.modal_panel(
+        self.modal_panel_scroll(
             "Archive test passed",
             760.0,
             body,

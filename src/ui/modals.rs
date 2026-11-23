@@ -1022,7 +1022,7 @@ impl AppView {
                             }),
                     );
                 }
-                self.modal_panel(
+                self.modal_panel_scroll(
                     title,
                     680.0,
                     div()

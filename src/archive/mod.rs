@@ -297,19 +297,26 @@ pub fn password_required(message: &str) -> bool {
         && !lower.contains("not a supported archive")
 }
 pub fn find_extracted(dest: &Path, display: &str) -> Option<std::path::PathBuf> {
-    let direct = dest.join(display);
-    if direct.is_file() {
+    let relative = commands::safe_relative(display)?;
+    let direct = dest.join(&relative);
+    if is_regular_file(&direct) {
         return Some(direct);
     }
-    let name = Path::new(display).file_name()?;
+    let name = relative.file_name()?;
     fn walk(directory: &Path, name: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
         let entries = std::fs::read_dir(directory).ok()?;
         let mut directories = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
+            let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
                 directories.push(path);
-            } else if path.file_name() == Some(name) {
+            } else if meta.is_file() && path.file_name() == Some(name) {
                 return Some(path);
             }
         }
@@ -321,6 +328,10 @@ pub fn find_extracted(dest: &Path, display: &str) -> Option<std::path::PathBuf> 
         None
     }
     walk(dest, name)
+}
+
+fn is_regular_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
 }
 
 pub fn display_archive_path(raw: &str) -> String {

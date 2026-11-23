@@ -94,14 +94,14 @@ pub(crate) struct FsState {
 }
 
 impl FsState {
-    pub(crate) fn new(path: PathBuf) -> Self {
+    pub(crate) fn new_with_hidden(path: PathBuf, show_hidden: bool) -> Self {
         let mut state = Self {
             path: path.clone(),
             entries: Vec::new(),
             selected: HashSet::new(),
             active: None,
             anchor: None,
-            show_hidden: false,
+            show_hidden,
             filter: String::new(),
             scroll: UniformListScrollHandle::new(),
             history: vec![path],

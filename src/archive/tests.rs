@@ -136,6 +136,15 @@ fn run(mut cmd: Command) {
     assert!(status.success(), "command failed: {cmd:?}");
 }
 
+fn run_password(cmd: Command, password: &str) {
+    let output = output_with_password(cmd, Some(password)).expect("tool should start");
+    assert!(
+        output.status.success(),
+        "command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn backend_roundtrip_for_7z_zip_and_targz() {
     let stamp = SystemTime::now()
@@ -179,8 +188,8 @@ fn backend_roundtrip_for_7z_zip_and_targz() {
         );
 
         if name.ends_with(".tar.gz") {
-            tar_add(&output, detected, &[source.join("a.txt")], &job).unwrap();
-            tar_delete(&output, detected, &["sub".to_string()], &job).unwrap();
+            tar_add(&output, detected, &[source.join("a.txt")], false, &job).unwrap();
+            tar_delete(&output, detected, &["sub".to_string()], false, &job).unwrap();
             let listing = list_archive(&output, None).unwrap();
             let names: Vec<&str> = listing
                 .entries
@@ -190,7 +199,7 @@ fn backend_roundtrip_for_7z_zip_and_targz() {
             assert!(names.contains(&"a.txt"));
             assert!(!names.iter().any(|path| path.starts_with("sub")));
         } else {
-            for cmd in add_commands(&output, &[source.join("sub/b.txt")], None).unwrap() {
+            for cmd in add_commands(&output, &[source.join("sub/b.txt")], None, 5).unwrap() {
                 run(cmd);
             }
             let mut delete = delete_command(
@@ -351,14 +360,17 @@ fn create_options_apply_password_and_excludes() {
         split: None,
         excludes: vec!["*.tmp".into()],
     };
-    run(create_command(
-        &archive,
-        NewFormat::SevenZ,
-        &source,
-        &[OsString::from(".")],
-        &options,
-    )
-    .unwrap());
+    run_password(
+        create_command(
+            &archive,
+            NewFormat::SevenZ,
+            &source,
+            &[OsString::from(".")],
+            &options,
+        )
+        .unwrap(),
+        "secret",
+    );
     let listing = list_archive(&archive, Some("secret")).unwrap();
     assert!(
         listing
@@ -411,7 +423,7 @@ fn encrypted_archive_requires_password() {
     let dest = root.join("out");
     std::fs::create_dir_all(&dest).unwrap();
     let extract = extract_command(&archive, Format::SevenZ, &dest, &[], Some("secret")).unwrap();
-    run(extract);
+    run_password(extract, "secret");
     assert_eq!(
         std::fs::read_to_string(dest.join("secret.txt")).unwrap(),
         "classified"
@@ -435,5 +447,40 @@ fn finds_nested_extracted_file() {
         Some(file.clone())
     );
     assert_eq!(find_extracted(&root, "file.txt"), Some(file));
+    assert_eq!(find_extracted(&root, "../file.txt"), None);
+    #[cfg(unix)]
+    {
+        let link = root.join("outside");
+        std::os::unix::fs::symlink("/etc/passwd", &link).unwrap();
+        assert_eq!(find_extracted(&root, "outside"), None);
+        std::fs::remove_file(link).unwrap();
+    }
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn detects_split_volume_names() {
+    assert!(is_split_volume(Path::new("data.7z.001")));
+    assert!(is_split_volume(Path::new("data.zip.001")));
+    assert!(!is_split_volume(Path::new("data.7z")));
+    assert!(!is_split_volume(Path::new("data.7z.002")));
+}
+
+#[test]
+fn create_commands_do_not_expose_passwords() {
+    let options = CreateOptions {
+        compression: 5,
+        password: Some("topsecret".into()),
+        split: None,
+        excludes: Vec::new(),
+    };
+    let command = create_command(
+        Path::new("/tmp/example.7z"),
+        NewFormat::SevenZ,
+        Path::new("/tmp"),
+        &[OsString::from("file.txt")],
+        &options,
+    )
+    .unwrap();
+    assert!(!format!("{command:?}").contains("topsecret"));
 }

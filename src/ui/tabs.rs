@@ -8,11 +8,13 @@ impl AppView {
         let theme = self.theme;
         let active_title = self.active_tab_title();
         let mut bar = div()
+            .id("tab-bar-scroll")
             .h(px(28.))
             .flex_none()
             .flex()
             .items_center()
             .gap_1()
+            .overflow_x_scroll()
             .px_2()
             .bg(rgb(theme.panel))
             .border_b_1()

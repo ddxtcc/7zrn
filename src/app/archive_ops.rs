@@ -59,8 +59,9 @@ impl AppView {
             JobKind::Create,
             label,
             move |job| {
+                let password = options.password.clone();
                 let mut cmd = archive::create_command(&path, format, &base, &names, &options)?;
-                job::run_command(&mut cmd, &job)?;
+                job::run_command_with_password(&mut cmd, &job, password.as_deref())?;
                 let created = if path.exists() {
                     path.clone()
                 } else {
@@ -425,12 +426,6 @@ impl AppView {
             return Err("Unknown source format".into());
         };
         let dest = fsops::resolve_path(&dest, &self.fs.path);
-        if dest == archive {
-            return Err("Choose a different output path".into());
-        }
-        if dest.exists() {
-            return Err(format!("{} already exists", dest.display()));
-        }
         let mut dest = dest;
         let ext = format.ext();
         if !dest
@@ -447,10 +442,27 @@ impl AppView {
                     .unwrap_or("archive")
             ));
         }
+        if dest == archive {
+            return Err("Choose a different output path".into());
+        }
+        if dest.exists() {
+            return Err(format!("{} already exists", dest.display()));
+        }
+        let split = split.trim().to_string();
+        if !split.is_empty() {
+            let file_name = dest
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("archive");
+            let first_volume = dest.with_file_name(format!("{file_name}.001"));
+            if first_volume.exists() {
+                return Err(format!("{} already exists", first_volume.display()));
+            }
+        }
         let options = archive::CreateOptions {
             compression,
             password: (!password.is_empty()).then(|| password.clone()),
-            split: (!split.trim().is_empty()).then(|| split.trim().to_string()),
+            split: (!split.is_empty()).then_some(split),
             excludes: Vec::new(),
         };
         self.execute_action(
@@ -477,8 +489,7 @@ impl AppView {
         {
             *current = format;
             *error = None;
-            let base = dest.rsplit_once('.').map(|(base, _)| base).unwrap_or(dest);
-            *dest = format!("{base}.{}", format.ext());
+            *dest = crate::text::replace_archive_extension(dest, format.ext());
             if let Some(edit) = self
                 .edit
                 .as_mut()

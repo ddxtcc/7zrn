@@ -9,27 +9,33 @@ use crate::job::{self, SharedJob};
 
 use super::{Format, NewFormat, SEVEN_ZIP, TAR};
 
-pub(crate) fn apply_password(cmd: &mut Command, password: Option<&str>) {
-    let mut argument = OsString::from("-p");
-    if let Some(password) = password {
-        argument.push(password);
+pub(crate) fn output_with_password(
+    mut cmd: Command,
+    password: Option<&str>,
+) -> std::io::Result<std::process::Output> {
+    use std::io::Write;
+    cmd.stdin(if password.is_some() {
+        std::process::Stdio::piped()
+    } else {
+        std::process::Stdio::null()
+    })
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn()?;
+    if let Some(password) = password
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        let _ = stdin.write_all(password.as_bytes());
+        let _ = stdin.write_all(b"\n");
     }
-    cmd.arg(argument);
-}
-
-fn apply_password_if_present(cmd: &mut Command, password: Option<&str>) {
-    if let Some(password) = password.filter(|value| !value.is_empty()) {
-        let mut argument = OsString::from("-p");
-        argument.push(password);
-        cmd.arg(argument);
-    }
+    child.wait_with_output()
 }
 pub fn extract_command(
     archive: &Path,
     format: Format,
     dest: &Path,
     raw_names: &[String],
-    password: Option<&str>,
+    _password: Option<&str>,
 ) -> Result<Command, String> {
     if format.is_tar_family() {
         let mut cmd = Command::new(TAR);
@@ -44,7 +50,6 @@ pub fn extract_command(
     } else {
         let mut cmd = Command::new(SEVEN_ZIP);
         cmd.args(["x", "-y", "-bsp1", "-bso1", "-bse1", "-spd", "-sccUTF-8"]);
-        apply_password(&mut cmd, password);
         let mut output_arg = OsString::from("-o");
         output_arg.push(dest.as_os_str());
         cmd.arg(output_arg).arg("--").arg(archive);
@@ -59,8 +64,12 @@ pub fn add_commands(
     archive: &Path,
     paths: &[PathBuf],
     password: Option<&str>,
+    compression: u8,
 ) -> Result<Vec<Command>, String> {
     let format = Format::detect(archive);
+    if is_split_volume(archive) {
+        return Err("Split-volume archives cannot be modified. Merge the volumes first.".into());
+    }
     if format.is_tar_family() {
         return Err("tar archives are updated by repacking".into());
     }
@@ -85,17 +94,11 @@ pub fn add_commands(
     let mut commands = Vec::new();
     for (parent, names) in groups {
         let mut cmd = Command::new(SEVEN_ZIP);
-        cmd.args([
-            "a",
-            "-y",
-            "-bsp1",
-            "-bso1",
-            "-bse1",
-            "-spd",
-            "-mx=5",
-            "-sccUTF-8",
-        ]);
-        apply_password_if_present(&mut cmd, password);
+        cmd.args(["a", "-y", "-bsp1", "-bso1", "-bse1", "-spd", "-sccUTF-8"]);
+        cmd.arg(format!("-mx={}", compression.min(9)));
+        if password.is_some() && format == Format::Zip {
+            cmd.arg("-mem=AES256");
+        }
         cmd.arg("--").arg(archive);
         for name in names {
             cmd.arg(name);
@@ -113,9 +116,12 @@ pub fn add_commands(
 pub fn delete_command(
     archive: &Path,
     raw_names: &[String],
-    password: Option<&str>,
+    _password: Option<&str>,
 ) -> Result<Command, String> {
     let format = Format::detect(archive);
+    if is_split_volume(archive) {
+        return Err("Split-volume archives cannot be modified. Merge the volumes first.".into());
+    }
     if !matches!(format, Format::SevenZ | Format::Zip) {
         return Err(format!(
             "{} archives are updated by repacking",
@@ -127,7 +133,6 @@ pub fn delete_command(
     }
     let mut cmd = Command::new(SEVEN_ZIP);
     cmd.args(["d", "-y", "-bsp1", "-bso1", "-bse1", "-spd", "-sccUTF-8"]);
-    apply_password_if_present(&mut cmd, password);
     cmd.arg("--").arg(archive);
     for name in raw_names {
         cmd.arg(name);
@@ -135,7 +140,7 @@ pub fn delete_command(
     Ok(cmd)
 }
 
-pub fn test_command(archive: &Path, format: Format, password: Option<&str>) -> Command {
+pub fn test_command(archive: &Path, format: Format, _password: Option<&str>) -> Command {
     if format.is_tar_family() {
         let mut cmd = Command::new(TAR);
         cmd.arg("-tf").arg(archive);
@@ -143,7 +148,6 @@ pub fn test_command(archive: &Path, format: Format, password: Option<&str>) -> C
     } else {
         let mut cmd = Command::new(SEVEN_ZIP);
         cmd.args(["t", "-y", "-bsp1", "-bso1", "-bse1"]);
-        apply_password(&mut cmd, password);
         cmd.arg("--").arg(archive);
         cmd
     }
@@ -167,16 +171,16 @@ pub fn create_command(
         cmd.args(["a", "-y", "-bsp1", "-bso1", "-bse1", "-sccUTF-8"])
             .arg(format!("-t{kind}"))
             .arg(format!("-mx={}", options.compression.min(9)));
-        if let Some(password) = options
+        if options
             .password
             .as_deref()
-            .filter(|value| !value.is_empty())
+            .is_some_and(|value| !value.is_empty())
         {
-            let mut argument = OsString::from("-p");
-            argument.push(password);
-            cmd.arg(argument);
+            cmd.arg("-p");
             if format == NewFormat::SevenZ {
                 cmd.arg("-mhe=on");
+            } else if format == NewFormat::Zip {
+                cmd.arg("-mem=AES256");
             }
         }
         if let Some(split) = options.split.as_deref().filter(|value| !value.is_empty()) {
@@ -223,6 +227,7 @@ pub fn tar_add(
     archive: &Path,
     format: Format,
     paths: &[PathBuf],
+    backup: bool,
     job: &SharedJob,
 ) -> Result<(), String> {
     if !format.is_tar_family() {
@@ -238,7 +243,7 @@ pub fn tar_add(
         return Err("Nothing to add (the archive itself was selected).".into());
     }
     let count = paths.len();
-    repack(archive, format, job, move |root| {
+    repack(archive, format, backup, job, move |root| {
         let mut cmd = Command::new("cp");
         cmd.arg("-a").arg("--");
         for path in &paths {
@@ -254,6 +259,7 @@ pub fn tar_delete(
     archive: &Path,
     format: Format,
     display_paths: &[String],
+    backup: bool,
     job: &SharedJob,
 ) -> Result<(), String> {
     if !format.is_tar_family() {
@@ -262,7 +268,7 @@ pub fn tar_delete(
     if display_paths.is_empty() {
         return Err("No entries selected".into());
     }
-    repack(archive, format, job, |root| {
+    repack(archive, format, backup, job, |root| {
         for path in display_paths {
             let Some(relative) = safe_relative(path) else {
                 continue;
@@ -320,6 +326,9 @@ pub fn apply_edit(
     backup: bool,
     job: &SharedJob,
 ) -> Result<(), String> {
+    if is_split_volume(archive) {
+        return Err("Split-volume archives cannot be modified. Merge the volumes first.".into());
+    }
     if !format.can_modify() {
         return Err(format!("{} archives are read-only", format.label()));
     }
@@ -513,15 +522,14 @@ where
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let pid = std::process::id();
-    let work_dir = std::env::temp_dir().join(format!("7zrn-{pid}-{stamp}"));
+    let work_dir = crate::fsops::private_cache_root().join(format!("repack-{pid}-{stamp}"));
     let out = parent.join(format!(".7zrn-{pid}-{stamp}.{suffix}"));
 
     let result = (|| {
-        fs::create_dir_all(&work_dir)
-            .map_err(|error| format!("Could not create temporary directory: {error}"))?;
+        crate::fsops::ensure_private_dir(&work_dir)?;
         job::note(job, "Extracting archive to a temporary directory");
         let mut extract = extract_command(archive, format, &work_dir, &[], password)?;
-        job::run_command(&mut extract, job)?;
+        job::run_command_with_password(&mut extract, job, password)?;
         mutate(&work_dir)?;
         job::note(job, format!("Rebuilding {} archive", format.label()));
         if format.is_tar_family() {
@@ -532,16 +540,20 @@ where
                 .arg("-C")
                 .arg(&work_dir)
                 .arg(".");
-            job::run_command(&mut create, job)?;
+            job::run_command_with_password(&mut create, job, password)?;
         } else {
             let kind = if format == Format::Zip { "zip" } else { "7z" };
             let mut create = Command::new(SEVEN_ZIP);
             create.args(["a", "-y", "-bsp1", "-bso1", "-bse1", "-spd", "-sccUTF-8"]);
             create.arg(format!("-mx={}", compression.min(9)));
             create.arg(format!("-t{kind}"));
-            apply_password_if_present(&mut create, password);
-            if password.is_some() && format == Format::SevenZ {
-                create.arg("-mhe=on");
+            if password.is_some() {
+                create.arg("-p");
+                if format == Format::SevenZ {
+                    create.arg("-mhe=on");
+                } else if format == Format::Zip {
+                    create.arg("-mem=AES256");
+                }
             }
             create.arg("--").arg(&out);
             let names = fs::read_dir(&work_dir)
@@ -552,7 +564,7 @@ where
                 create.arg(entry.file_name());
             }
             create.current_dir(&work_dir);
-            job::run_command(&mut create, job)?;
+            job::run_command_with_password(&mut create, job, password)?;
         }
         if !out.is_file() {
             return Err("Archive rebuild produced no output".into());
@@ -584,6 +596,27 @@ where
     result
 }
 
+pub fn is_split_volume(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    name.ends_with(".7z.001") || name.ends_with(".zip.001")
+}
+
+fn backup_archive(archive: &Path, job: &SharedJob) -> Result<(), String> {
+    let name = archive
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("archive");
+    let backup_path = archive.with_file_name(format!("{name}.bak"));
+    fs::copy(archive, &backup_path)
+        .map_err(|error| format!("Could not write backup {}: {error}", backup_path.display()))?;
+    job::note(job, format!("Backup written to {}", backup_path.display()));
+    Ok(())
+}
+
 pub(crate) fn safe_relative(path: &str) -> Option<PathBuf> {
     let mut out = PathBuf::new();
     for component in Path::new(path).components() {
@@ -600,7 +633,13 @@ pub(crate) fn safe_relative(path: &str) -> Option<PathBuf> {
     }
 }
 
-fn repack<F>(archive: &Path, format: Format, job: &SharedJob, mutate: F) -> Result<(), String>
+fn repack<F>(
+    archive: &Path,
+    format: Format,
+    backup: bool,
+    job: &SharedJob,
+    mutate: F,
+) -> Result<(), String>
 where
     F: FnOnce(&Path) -> Result<(), String>,
 {
@@ -616,12 +655,11 @@ where
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let pid = std::process::id();
-    let work_dir = std::env::temp_dir().join(format!("7zrn-{pid}-{stamp}"));
+    let work_dir = crate::fsops::private_cache_root().join(format!("repack-{pid}-{stamp}"));
     let out = parent.join(format!(".7zrn-{pid}-{stamp}.{suffix}"));
 
     let result = (|| {
-        fs::create_dir_all(&work_dir)
-            .map_err(|e| format!("Could not create temporary directory: {e}"))?;
+        crate::fsops::ensure_private_dir(&work_dir)?;
 
         job::note(job, "Extracting archive to a temporary directory");
         let mut extract = Command::new(TAR);
@@ -642,6 +680,9 @@ where
 
         if !out.is_file() {
             return Err("Archive rebuild produced no output".into());
+        }
+        if backup {
+            backup_archive(archive, job)?;
         }
         fs::rename(&out, archive).map_err(|e| {
             format!(

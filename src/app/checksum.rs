@@ -46,9 +46,8 @@ impl AppView {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or(0);
-        let dest = std::env::temp_dir()
-            .join("7zrn-checksum")
-            .join(std::process::id().to_string())
+        let dest = crate::fsops::private_cache_root()
+            .join("checksum")
             .join(stamp.to_string());
         self.execute_action(
             PendingAction::Checksums {
@@ -120,9 +119,8 @@ impl AppView {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or(0);
-        let dest = std::env::temp_dir()
-            .join("7zrn-verify")
-            .join(std::process::id().to_string())
+        let dest = crate::fsops::private_cache_root()
+            .join("verify")
             .join(stamp.to_string());
         self.execute_action(
             PendingAction::VerifyChecksums {

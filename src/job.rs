@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -128,26 +128,53 @@ fn parse_percent(line: &str) -> Option<u8> {
 }
 
 pub fn run_command(cmd: &mut Command, job: &SharedJob) -> Result<(), String> {
-    run_impl(cmd, job, false).map(|_| ())
+    run_impl(cmd, job, false, None).map(|_| ())
 }
 
-pub fn run_capture(cmd: &mut Command, job: &SharedJob) -> Result<String, String> {
-    run_impl(cmd, job, true)
+pub fn run_command_with_password(
+    cmd: &mut Command,
+    job: &SharedJob,
+    password: Option<&str>,
+) -> Result<(), String> {
+    run_impl(cmd, job, false, password).map(|_| ())
 }
 
-fn run_impl(cmd: &mut Command, job: &SharedJob, capture_stdout: bool) -> Result<String, String> {
+pub fn run_capture_with_password(
+    cmd: &mut Command,
+    job: &SharedJob,
+    password: Option<&str>,
+) -> Result<String, String> {
+    run_impl(cmd, job, true, password)
+}
+
+fn run_impl(
+    cmd: &mut Command,
+    job: &SharedJob,
+    capture_stdout: bool,
+    password: Option<&str>,
+) -> Result<String, String> {
     if job.lock().unwrap().cancel {
         return Err(CANCELLED.to_string());
     }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.stdin(if password.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
     cmd.env("LC_ALL", "C.UTF-8").env("LANG", "C.UTF-8");
     let program = cmd.get_program().to_string_lossy().into_owned();
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start {program}: {e}"))?;
     job.lock().unwrap().pid = Some(child.id());
+    if let Some(password) = password
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        let _ = stdin.write_all(password.as_bytes());
+        let _ = stdin.write_all(b"\n");
+    }
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
 

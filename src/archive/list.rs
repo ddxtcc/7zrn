@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use super::commands::apply_password;
+use super::commands::output_with_password;
 use super::{Entry, Format, Listing, SEVEN_ZIP, display_archive_path};
 
 pub fn list_archive(path: &Path, password: Option<&str>) -> Result<Listing, String> {
@@ -23,7 +23,6 @@ pub fn list_archive(path: &Path, password: Option<&str>) -> Result<Listing, Stri
 fn list_with_7z(path: &Path, password: Option<&str>) -> Result<Vec<Entry>, String> {
     let mut cmd = Command::new(SEVEN_ZIP);
     cmd.args(["l", "-slt", "-ba", "-sccUTF-8"]);
-    apply_password(&mut cmd, password);
     cmd.arg("--")
         .arg(path)
         .stdin(Stdio::null())
@@ -31,8 +30,7 @@ fn list_with_7z(path: &Path, password: Option<&str>) -> Result<Vec<Entry>, Strin
         .stderr(Stdio::piped())
         .env("LC_ALL", "C.UTF-8")
         .env("LANG", "C.UTF-8");
-    let output = cmd
-        .output()
+    let output = output_with_password(cmd, password)
         .map_err(|e| format!("Could not run {SEVEN_ZIP}: {e}"))?;
     if !output.status.success() {
         return Err(archive_open_error(

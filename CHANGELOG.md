@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.0 - 2026-11-23
+
+- Keep automatic NFO previews in the bottom pane instead of opening a modal
+- Move file previews and filesystem search off the UI thread
+- Pass archive passwords through stdin instead of process arguments
+- Preserve AES-256 ZIP encryption during rebuilds
+- Prevent ZIP edit downgrades, split-volume edits, and unsafe extracted-file following
+- Honor tar backups and the configured edit compression when adding files
+- Fix conversion output validation and split-volume output handling
+- Require contiguous numbered volumes before merging
+- Use private runtime cache directories for extracted previews and temporary work
+- Fix modal field switching, password masking, tab focus, cursor repaint, and modal scrolling
+- Reap external open processes and keep tab audio state in sync
+- Clear stale previews and edits when opening archives or showing job result modals
+- Apply configured new-archive defaults and hidden-file state across tabs
+
+## 0.7.1 - 2026-11-23
+
+- Load automatic NFO previews in the bottom pane instead of opening a modal
+
 ## 0.7.0 - 2026-11-23
 
 - Configurable general and audio preview size limits

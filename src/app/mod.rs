@@ -38,6 +38,7 @@ pub(crate) struct AppView {
     pub(crate) context_menu: Option<ContextMenu>,
     pub(crate) preview: Option<PreviewView>,
     pub(crate) preview_generation: u64,
+    pub(crate) search_generation: u64,
     pub(crate) preview_ratio: f32,
     pub(crate) preview_drag: Option<PreviewSplitDrag>,
     pub(crate) code_wrap: bool,
@@ -78,9 +79,7 @@ impl AppView {
         let theme_id = settings.theme;
         let theme = theme_id.theme();
         let split_ratio = settings.split;
-        let mut fs = FsState::new(path);
-        fs.show_hidden = settings.show_hidden;
-        fs.clamp_active();
+        let fs = FsState::new_with_hidden(path, settings.show_hidden);
         let mut view = Self {
             focus_handle: cx.focus_handle(),
             focused: Pane::Fs,
@@ -91,6 +90,7 @@ impl AppView {
             context_menu: None,
             preview: None,
             preview_generation: 0,
+            search_generation: 0,
             preview_ratio: settings.preview_ratio,
             preview_drag: None,
             code_wrap: settings.code_wrap,

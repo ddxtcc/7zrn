@@ -304,7 +304,10 @@ impl AppView {
                 }),
             );
         }
-        let masked = matches!(target, Some(EditTarget::Password));
+        let masked = matches!(
+            target,
+            Some(EditTarget::Password | EditTarget::NewPassword | EditTarget::ConvertPassword)
+        );
         if active {
             let cursor = clamp_boundary(text, cursor);
             let (before, after) = if masked {

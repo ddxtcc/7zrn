@@ -54,7 +54,7 @@ impl AppView {
     }
 
     fn volume_set(&self) -> Option<(PathBuf, Vec<PathBuf>)> {
-        let mut selected: Vec<PathBuf> = self
+        let selected: Vec<PathBuf> = self
             .fs_action_paths()
             .into_iter()
             .filter(|path| path.is_file())
@@ -62,27 +62,37 @@ impl AppView {
         if selected.len() < 2 {
             return None;
         }
-        selected.sort();
-        let first = selected.first()?;
-        let name = first.file_name()?.to_str()?;
-        let (base, suffix) = name.rsplit_once('.')?;
-        if !suffix.chars().all(|character| character.is_ascii_digit()) || suffix.len() < 3 {
+        let mut numbered = Vec::with_capacity(selected.len());
+        let mut base = None;
+        let mut width = None;
+        for path in selected {
+            let name = path.file_name()?.to_str()?;
+            let (path_base, suffix) = name.rsplit_once('.')?;
+            if suffix.len() < 3 || !suffix.chars().all(|character| character.is_ascii_digit()) {
+                return None;
+            }
+            if base.as_deref().is_some_and(|base| base != path_base) {
+                return None;
+            }
+            if width.is_some_and(|width| width != suffix.len()) {
+                return None;
+            }
+            base = Some(path_base.to_string());
+            width = Some(suffix.len());
+            numbered.push((suffix.parse::<u32>().ok()?, path));
+        }
+        numbered.sort_by_key(|(number, _)| *number);
+        if numbered.first().map(|(number, _)| *number) != Some(1)
+            || numbered
+                .iter()
+                .enumerate()
+                .any(|(index, (number, _))| *number != index as u32 + 1)
+        {
             return None;
         }
-        if !selected.iter().all(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .and_then(|name| name.rsplit_once('.'))
-                .is_some_and(|(path_base, path_suffix)| {
-                    path_base == base
-                        && path_suffix
-                            .chars()
-                            .all(|character| character.is_ascii_digit())
-                })
-        }) {
-            return None;
-        }
+        let base = base?;
+        let first = numbered.first().map(|(_, path)| path)?;
         let output = first.parent()?.join(base);
-        Some((output, selected))
+        Some((output, numbered.into_iter().map(|(_, path)| path).collect()))
     }
 }

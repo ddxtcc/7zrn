@@ -19,7 +19,11 @@ impl AppView {
         }
         let theme = self.theme;
         let width = 224.0;
-        let height = 19.0 * 26.0 + 8.0;
+        let rows = match menu.pane {
+            Pane::Fs => 11.0,
+            Pane::Archive => 16.0,
+        };
+        let height = rows * 26.0 + (rows - 1.0) * 2.0 + 8.0;
         let window_width = f32::from(window.bounds().size.width);
         let window_height = f32::from(window.bounds().size.height);
         let x = menu.x.clamp(4.0, (window_width - width - 8.0).max(4.0));

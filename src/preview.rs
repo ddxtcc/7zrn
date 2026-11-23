@@ -154,9 +154,8 @@ fn render_pdf(path: &Path, dpi: u32) -> Result<PathBuf, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    let directory = std::env::temp_dir().join(format!("7zrn-pdf-{}-{stamp}", std::process::id()));
-    std::fs::create_dir_all(&directory)
-        .map_err(|error| format!("Could not create PDF preview directory: {error}"))?;
+    let directory = crate::fsops::private_cache_root().join(format!("pdf-{stamp}"));
+    crate::fsops::ensure_private_dir(&directory)?;
     let output = directory.join("page");
     let result = std::process::Command::new("pdftoppm")
         .args(["-png", "-f", "1", "-singlefile", "-r"])

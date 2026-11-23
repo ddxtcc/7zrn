@@ -68,7 +68,7 @@ impl AppView {
                 .archive
                 .format
                 .is_some_and(|format| format.can_modify());
-        self.modal_panel(
+        self.modal_panel_scroll(
             "Checksums",
             820.0,
             body,

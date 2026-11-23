@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::Path;
+use std::sync::mpsc::{self, TryRecvError};
+use std::time::Duration;
 
-use gpui::{Context, Window};
+use gpui::{Context, Timer, Window};
 
 use crate::archive;
 use crate::state::{Modal, SearchHit, SearchScope};
@@ -20,6 +22,7 @@ impl AppView {
         } else {
             SearchScope::Fs
         };
+        self.search_generation = self.search_generation.wrapping_add(1);
         self.modal = Some(Modal::Search {
             scope,
             query: String::new(),
@@ -76,6 +79,7 @@ impl AppView {
             }) => (*scope, query.trim().to_string(), *content),
             _ => return,
         };
+        self.search_generation = self.search_generation.wrapping_add(1);
         if query.is_empty() {
             if let Some(Modal::Search {
                 results,
@@ -92,16 +96,48 @@ impl AppView {
             return;
         }
         let needle = query.to_lowercase();
-        let result = match scope {
-            SearchScope::Fs => search_fs(&self.fs.path, &needle, content, self.fs.show_hidden),
-            SearchScope::Archive => {
-                if content {
-                    Err("Content search is available in the Files pane.".to_string())
-                } else {
-                    Ok(search_archive(&self.archive, &needle))
+        if scope == SearchScope::Archive {
+            let result = if content {
+                Err("Content search is available in the Files pane.".to_string())
+            } else {
+                Ok(search_archive(&self.archive, &needle))
+            };
+            self.apply_search_result(result, cx);
+            return;
+        }
+        let generation = self.search_generation;
+        let root = self.fs.path.clone();
+        let show_hidden = self.fs.show_hidden;
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(search_fs(&root, &needle, content, show_hidden));
+        });
+        cx.spawn(async move |this, cx| {
+            loop {
+                match receiver.try_recv() {
+                    Ok(result) => {
+                        let _ = this.update(cx, |this, cx| {
+                            if this.search_generation == generation {
+                                this.apply_search_result(result, cx);
+                            }
+                        });
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => {
+                        Timer::after(Duration::from_millis(50)).await;
+                    }
+                    Err(TryRecvError::Disconnected) => break,
                 }
             }
-        };
+        })
+        .detach();
+    }
+
+    fn apply_search_result(
+        &mut self,
+        result: Result<Vec<SearchHit>, String>,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(Modal::Search {
             results,
             selected,
@@ -121,8 +157,8 @@ impl AppView {
                     *error = Some(message);
                 }
             }
+            cx.notify();
         }
-        cx.notify();
     }
 
     pub(crate) fn activate_search_hit(&mut self, hit: SearchHit, cx: &mut Context<Self>) {
@@ -164,7 +200,13 @@ impl AppView {
                         self.archive.selected.insert(key);
                     }
                 }
-                self.archive.reset_active();
+                if is_dir {
+                    self.archive.reset_active();
+                } else if let Some(active) = self.archive.active {
+                    self.archive
+                        .scroll
+                        .scroll_to_item(active, gpui::ScrollStrategy::Center);
+                }
                 cx.notify();
             }
         }

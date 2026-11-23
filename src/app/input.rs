@@ -21,12 +21,14 @@ impl AppView {
             EditTarget::ArcFilter => self.focused = Pane::Archive,
             _ => {}
         }
-        if let Some(edit) = &self.edit
-            && edit.target == target
-        {
-            self.focus_handle.focus(window);
-            cx.notify();
-            return;
+        if let Some(existing) = self.edit.take() {
+            if existing.target == target {
+                self.edit = Some(existing);
+                self.focus_handle.focus(window);
+                cx.notify();
+                return;
+            }
+            self.write_edit_text_to_target(existing.target, existing.text);
         }
         let cursor = text.len();
         self.edit = Some(EditState {
@@ -238,6 +240,7 @@ impl AppView {
 
         let mut changed = false;
         let mut filter_changed = false;
+        let mut cursor_moved = false;
         if let Some(edit) = self.edit.as_mut() {
             match key {
                 "backspace" => {
@@ -257,15 +260,19 @@ impl AppView {
                 }
                 "left" => {
                     edit.cursor = prev_boundary(&edit.text, edit.cursor);
+                    cursor_moved = true;
                 }
                 "right" => {
                     edit.cursor = next_boundary(&edit.text, edit.cursor);
+                    cursor_moved = true;
                 }
                 "home" => {
                     edit.cursor = 0;
+                    cursor_moved = true;
                 }
                 "end" => {
                     edit.cursor = edit.text.len();
+                    cursor_moved = true;
                 }
                 "tab" => return true,
                 _ => {
@@ -275,6 +282,7 @@ impl AppView {
                         changed = true;
                     } else if control && key == "a" {
                         edit.cursor = edit.text.len();
+                        cursor_moved = true;
                     } else if let Some(paste) = paste {
                         if edit.text.len() + paste.len() < 8192 {
                             let paste = paste.replace(['\n', '\r'], " ");
@@ -303,6 +311,8 @@ impl AppView {
             if !filter_changed {
                 cx.notify();
             }
+        } else if cursor_moved {
+            cx.notify();
         }
         true
     }
@@ -338,12 +348,12 @@ impl AppView {
             }
             EditTarget::Search => {
                 self.write_edit_text_to_target(edit.target, edit.text);
-                self.run_search(cx);
+                self.submit_search(cx);
             }
             EditTarget::Palette => {
                 self.write_edit_text_to_target(edit.target, edit.text);
                 self.update_palette_selection();
-                cx.notify();
+                self.submit_palette(window, cx);
             }
         }
     }

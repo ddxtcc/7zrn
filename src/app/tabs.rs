@@ -29,7 +29,10 @@ impl AppView {
         let title = self.active_tab_title();
         let focused = self.focused;
         let path = self.fs.path.clone();
-        let fs = std::mem::replace(&mut self.fs, FsState::new(path));
+        let fs = std::mem::replace(
+            &mut self.fs,
+            FsState::new_with_hidden(path, self.settings.show_hidden),
+        );
         let archive = std::mem::replace(&mut self.archive, ArchiveState::new());
         let tab = &mut self.tabs[self.active_tab];
         tab.title = title;
@@ -67,7 +70,7 @@ impl AppView {
                     .and_then(|name| name.to_str())
                     .unwrap_or("Tab")
                     .to_string(),
-                fs: Some(FsState::new(fs_path)),
+                fs: Some(FsState::new_with_hidden(fs_path, self.settings.show_hidden)),
                 archive: Some(archive),
                 focused: Pane::Fs,
             });
@@ -130,12 +133,12 @@ impl AppView {
         }
         let path = self.fs.path.clone();
         self.store_current();
-        self.fs = FsState::new(path);
+        self.fs = FsState::new_with_hidden(path, self.settings.show_hidden);
         self.archive = ArchiveState::new();
         self.tabs.push(Tab::empty());
         self.active_tab = self.tabs.len() - 1;
         self.focused = Pane::Fs;
-        self.preview = None;
+        self.close_preview(cx);
         self.edit = None;
         self.modal = None;
         self.context_menu = None;
@@ -156,7 +159,9 @@ impl AppView {
             (tab.fs.take(), tab.archive.take(), tab.focused)
         };
         self.store_current();
-        self.fs = next_fs.unwrap_or_else(|| FsState::new(fsops::home_dir()));
+        self.fs = next_fs.unwrap_or_else(|| {
+            FsState::new_with_hidden(fsops::home_dir(), self.settings.show_hidden)
+        });
         self.archive = next_archive.unwrap_or_else(ArchiveState::new);
         self.active_tab = index;
         self.focused = if self.archive.archive.is_some() {
@@ -167,7 +172,7 @@ impl AppView {
         if self.archive.archive.is_some() && self.archive.listing.is_none() {
             self.refresh_archive(cx);
         }
-        self.preview = None;
+        self.close_preview(cx);
         self.edit = None;
         self.modal = None;
         self.context_menu = None;
@@ -185,8 +190,8 @@ impl AppView {
         }
         if self.tabs.len() == 1 {
             self.archive.clear();
-            self.fs = FsState::new(fsops::home_dir());
-            self.preview = None;
+            self.fs = FsState::new_with_hidden(fsops::home_dir(), self.settings.show_hidden);
+            self.close_preview(cx);
             self.edit = None;
             self.modal = None;
             self.context_menu = None;
@@ -203,20 +208,25 @@ impl AppView {
                 (tab.fs.take(), tab.archive.take(), tab.focused)
             };
             self.active_tab = next;
-            self.fs = fs.unwrap_or_else(|| FsState::new(fsops::home_dir()));
+            self.fs = fs.unwrap_or_else(|| {
+                FsState::new_with_hidden(fsops::home_dir(), self.settings.show_hidden)
+            });
             self.archive = archive.unwrap_or_else(ArchiveState::new);
             self.focused = if self.archive.archive.is_some() {
                 focused
             } else {
                 Pane::Fs
             };
+            if self.archive.archive.is_some() && self.archive.listing.is_none() {
+                self.refresh_archive(cx);
+            }
         } else {
             self.tabs.remove(index);
             if index < self.active_tab {
                 self.active_tab -= 1;
             }
         }
-        self.preview = None;
+        self.close_preview(cx);
         self.edit = None;
         self.modal = None;
         self.context_menu = None;

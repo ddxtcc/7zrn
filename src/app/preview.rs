@@ -56,8 +56,40 @@ impl AppView {
             );
             return;
         }
-        let content = preview::load(&path, self.preview_limits());
-        self.show_preview(Some(path), title, content, cx);
+        self.show_preview(Some(path.clone()), title, PreviewContent::Loading, cx);
+        let generation = self.preview_generation;
+        let limits = self.preview_limits();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(preview::load(&path, limits));
+        });
+        cx.spawn(async move |this, cx| {
+            loop {
+                match receiver.try_recv() {
+                    Ok(content) => {
+                        let _ = this.update(cx, |this, cx| {
+                            if this.preview_generation != generation {
+                                return;
+                            }
+                            let audio = matches!(content, PreviewContent::Audio(_));
+                            if let Some(preview) = &mut this.preview {
+                                preview.content = content;
+                            }
+                            if audio && this.settings.audio_autoplay {
+                                this.play_audio(cx);
+                            }
+                            cx.notify();
+                        });
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => {
+                        Timer::after(Duration::from_millis(40)).await;
+                    }
+                    Err(TryRecvError::Disconnected) => break,
+                }
+            }
+        })
+        .detach();
     }
 
     pub(crate) fn auto_preview_root_nfo(&mut self, cx: &mut Context<Self>) {
@@ -189,6 +221,7 @@ impl AppView {
         let password = self.archive.password.clone();
         let dest = preview_cache_dir(&archive);
         let limits = self.preview_limits();
+        self.stop_audio();
         self.preview_generation += 1;
         let generation = self.preview_generation;
         self.context_menu = None;
@@ -214,9 +247,13 @@ impl AppView {
                             }
                             match result {
                                 Ok((path, content)) => {
+                                    let audio = matches!(content, PreviewContent::Audio(_));
                                     if let Some(preview) = &mut this.preview {
                                         preview.path = Some(path);
                                         preview.content = content;
+                                    }
+                                    if audio && this.settings.audio_autoplay {
+                                        this.play_audio(cx);
                                     }
                                 }
                                 Err(error) => {
@@ -318,7 +355,7 @@ impl AppView {
             .map(PathBuf::from)
             .unwrap_or_else(|| self.fs.path.clone());
         self.new_tab(cx);
-        self.fs = crate::state::FsState::new(parent);
+        self.fs = crate::state::FsState::new_with_hidden(parent, self.settings.show_hidden);
         self.open_archive(path, cx);
     }
 
@@ -346,7 +383,13 @@ impl AppView {
             result = Command::new("gio").arg("open").arg(&url).spawn();
         }
         match result {
-            Ok(_) => self.set_message(format!("Opened {url}"), false),
+            Ok(child) => {
+                std::thread::spawn(move || {
+                    let mut child = child;
+                    let _ = child.wait();
+                });
+                self.set_message(format!("Opened {url}"), false);
+            }
             Err(error) => self.set_message(format!("Could not open {url}: {error}"), true),
         }
         cx.notify();
@@ -482,7 +525,13 @@ impl AppView {
             result = Command::new("gio").arg("open").arg(&path).spawn();
         }
         match result {
-            Ok(_) => self.set_message(format!("Opened {}", path.display()), false),
+            Ok(child) => {
+                std::thread::spawn(move || {
+                    let mut child = child;
+                    let _ = child.wait();
+                });
+                self.set_message(format!("Opened {}", path.display()), false);
+            }
             Err(error) => {
                 self.set_message(format!("Could not open {}: {error}", path.display()), true)
             }
@@ -540,10 +589,7 @@ fn cache_dir(prefix: &str, archive: &Path) -> PathBuf {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("archive");
-    std::env::temp_dir()
-        .join(prefix)
-        .join(std::process::id().to_string())
-        .join(name)
+    crate::fsops::private_cache_root().join(prefix).join(name)
 }
 
 fn start_audio(path: &Path, preferred: AudioPlayer) -> std::io::Result<std::process::Child> {
@@ -589,13 +635,11 @@ fn prepare_preview(
     password: Option<String>,
     limits: PreviewLimits,
 ) -> Result<(PathBuf, PreviewContent), String> {
-    std::fs::create_dir_all(&dest)
-        .map_err(|error| format!("Could not create {}: {error}", dest.display()))?;
+    crate::fsops::ensure_private_dir(&dest)?;
     let raw_names = vec![raw_name];
-    let mut command =
+    let command =
         archive::extract_command(&archive, format, &dest, &raw_names, password.as_deref())?;
-    let output = command
-        .output()
+    let output = archive::output_with_password(command, password.as_deref())
         .map_err(|error| format!("Could not extract preview: {error}"))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr);

@@ -17,6 +17,7 @@ impl AppView {
             cx.notify();
             return;
         }
+        self.close_preview(cx);
         let format = Format::detect(&path);
         self.archive.clear();
         self.archive.archive = Some(path.clone());
@@ -163,7 +164,7 @@ impl AppView {
                             &raw_names,
                             password.as_deref(),
                         )?;
-                        job::run_command(&mut cmd, &job)?;
+                        job::run_command_with_password(&mut cmd, &job, password.as_deref())?;
                         Ok(JobPayload::Extracted { dest, count, names })
                     },
                     cx,
@@ -177,7 +178,8 @@ impl AppView {
                     label,
                     move |job| {
                         let mut cmd = archive::test_command(&archive, format, password.as_deref());
-                        let output = job::run_capture(&mut cmd, &job)?;
+                        let output =
+                            job::run_capture_with_password(&mut cmd, &job, password.as_deref())?;
                         let summary = if format.is_tar_family() {
                             let count = output
                                 .lines()
@@ -222,9 +224,7 @@ impl AppView {
                     JobKind::Extract,
                     label,
                     move |job| {
-                        std::fs::create_dir_all(&dest).map_err(|error| {
-                            format!("Could not create {}: {error}", dest.display())
-                        })?;
+                        crate::fsops::ensure_private_dir(&dest)?;
                         let raw_names = vec![raw_name];
                         let mut cmd = archive::extract_command(
                             &archive,
@@ -233,7 +233,7 @@ impl AppView {
                             &raw_names,
                             password.as_deref(),
                         )?;
-                        job::run_command(&mut cmd, &job)?;
+                        job::run_command_with_password(&mut cmd, &job, password.as_deref())?;
                         let path = archive::find_extracted(&dest, &display_name)
                             .ok_or_else(|| format!("Could not find extracted {display_name}"))?;
                         Ok(JobPayload::Opened { path })
@@ -254,17 +254,26 @@ impl AppView {
                     format!("Adding {count} item(s) to archive")
                 };
                 let password = password.clone();
+                let compression = self.settings.edit_compression;
+                let backup = self.settings.backup_edits;
                 self.start_job(
                     JobKind::Add,
                     label,
                     move |job| {
                         if format.is_tar_family() {
-                            archive::tar_add(&archive, format, &paths, &job)?;
+                            archive::tar_add(&archive, format, &paths, backup, &job)?;
                         } else {
-                            for mut cmd in
-                                archive::add_commands(&archive, &paths, password.as_deref())?
-                            {
-                                job::run_command(&mut cmd, &job)?;
+                            for mut cmd in archive::add_commands(
+                                &archive,
+                                &paths,
+                                password.as_deref(),
+                                compression,
+                            )? {
+                                job::run_command_with_password(
+                                    &mut cmd,
+                                    &job,
+                                    password.as_deref(),
+                                )?;
                             }
                         }
                         if remove_sources {
@@ -293,9 +302,7 @@ impl AppView {
                     JobKind::Extract,
                     label,
                     move |job| {
-                        std::fs::create_dir_all(&dest).map_err(|error| {
-                            format!("Could not create {}: {error}", dest.display())
-                        })?;
+                        crate::fsops::ensure_private_dir(&dest)?;
                         let mut cmd = archive::extract_command(
                             &archive,
                             format,
@@ -303,7 +310,7 @@ impl AppView {
                             std::slice::from_ref(&raw_name),
                             password.as_deref(),
                         )?;
-                        job::run_command(&mut cmd, &job)?;
+                        job::run_command_with_password(&mut cmd, &job, password.as_deref())?;
                         let path =
                             archive::find_extracted(&dest, &display_name).ok_or_else(|| {
                                 format!("Could not find nested archive {display_name}")
@@ -353,9 +360,7 @@ impl AppView {
                     JobKind::Verify,
                     label,
                     move |job| {
-                        std::fs::create_dir_all(&dest).map_err(|error| {
-                            format!("Could not create {}: {error}", dest.display())
-                        })?;
+                        crate::fsops::ensure_private_dir(&dest)?;
                         let manifest_raw = entries
                             .iter()
                             .find(|(display, _)| display == &checksum_key)
@@ -369,7 +374,7 @@ impl AppView {
                             std::slice::from_ref(&manifest_raw),
                             password.as_deref(),
                         )?;
-                        job::run_command(&mut extract, &job)?;
+                        job::run_command_with_password(&mut extract, &job, password.as_deref())?;
                         let manifest_path = archive::find_extracted(&dest, &checksum_key)
                             .ok_or_else(|| {
                                 "Could not find extracted checksum manifest".to_string()
@@ -402,7 +407,7 @@ impl AppView {
                             &raw_names,
                             password.as_deref(),
                         )?;
-                        job::run_command(&mut extract, &job)?;
+                        job::run_command_with_password(&mut extract, &job, password.as_deref())?;
                         let manifest_path = archive::find_extracted(&dest, &checksum_key)
                             .ok_or_else(|| {
                                 "Could not find extracted checksum manifest".to_string()
@@ -429,6 +434,7 @@ impl AppView {
                 let count = names.len();
                 let label = format!("Moving {count} item(s) to {}", dest.display());
                 let password = password.clone();
+                let backup = self.settings.backup_edits;
                 self.start_job(
                     JobKind::Extract,
                     label,
@@ -443,13 +449,13 @@ impl AppView {
                             &raw_names,
                             password.as_deref(),
                         )?;
-                        job::run_command(&mut extract, &job)?;
+                        job::run_command_with_password(&mut extract, &job, password.as_deref())?;
                         if format.is_tar_family() {
-                            archive::tar_delete(&archive, format, &names, &job)?;
+                            archive::tar_delete(&archive, format, &names, backup, &job)?;
                         } else {
                             let mut delete =
                                 archive::delete_command(&archive, &raw_names, password.as_deref())?;
-                            job::run_command(&mut delete, &job)?;
+                            job::run_command_with_password(&mut delete, &job, password.as_deref())?;
                         }
                         Ok(JobPayload::MovedOut { dest, count, names })
                     },
@@ -469,17 +475,9 @@ impl AppView {
                     JobKind::Create,
                     label,
                     move |job| {
-                        let work = std::env::temp_dir().join(format!(
-                            "7zrn-convert-{}-{}",
-                            std::process::id(),
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .map(|duration| duration.as_nanos())
-                                .unwrap_or(0)
-                        ));
-                        std::fs::create_dir_all(&work).map_err(|error| {
-                            format!("Could not create {}: {error}", work.display())
-                        })?;
+                        let work = crate::fsops::private_cache_root()
+                            .join(format!("convert-{}", std::process::id()));
+                        crate::fsops::ensure_private_dir(&work)?;
                         let result = (|| {
                             job::note(&job, "Extracting source archive");
                             let mut extract = archive::extract_command(
@@ -489,7 +487,11 @@ impl AppView {
                                 &[],
                                 password.as_deref(),
                             )?;
-                            job::run_command(&mut extract, &job)?;
+                            job::run_command_with_password(
+                                &mut extract,
+                                &job,
+                                password.as_deref(),
+                            )?;
                             let names: Vec<std::ffi::OsString> = std::fs::read_dir(&work)
                                 .map_err(|error| {
                                     format!("Could not read {}: {error}", work.display())
@@ -498,15 +500,29 @@ impl AppView {
                                 .map(|entry| entry.file_name())
                                 .collect();
                             job::note(&job, "Creating converted archive");
+                            let output_password = options.password.clone();
                             let mut create =
                                 archive::create_command(&dest, format, &work, &names, &options)?;
-                            job::run_command(&mut create, &job)?;
-                            if !dest.is_file() {
+                            job::run_command_with_password(
+                                &mut create,
+                                &job,
+                                output_password.as_deref(),
+                            )?;
+                            let output = if dest.is_file() {
+                                dest.clone()
+                            } else if options.split.is_some() {
+                                let file_name = dest
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("archive");
+                                dest.with_file_name(format!("{file_name}.001"))
+                            } else {
+                                dest.clone()
+                            };
+                            if !output.is_file() {
                                 return Err("Conversion produced no output".into());
                             }
-                            Ok(JobPayload::Created {
-                                archive: dest.clone(),
-                            })
+                            Ok(JobPayload::Created { archive: output })
                         })();
                         let _ = std::fs::remove_dir_all(&work);
                         result
@@ -529,9 +545,7 @@ impl AppView {
                                 dest,
                                 raw_names,
                             } => {
-                                std::fs::create_dir_all(&dest).map_err(|error| {
-                                    format!("Could not create {}: {error}", dest.display())
-                                })?;
+                                crate::fsops::ensure_private_dir(&dest)?;
                                 let mut cmd = archive::extract_command(
                                     &archive,
                                     format,
@@ -539,7 +553,11 @@ impl AppView {
                                     &raw_names,
                                     password.as_deref(),
                                 )?;
-                                job::run_command(&mut cmd, &job)?;
+                                job::run_command_with_password(
+                                    &mut cmd,
+                                    &job,
+                                    password.as_deref(),
+                                )?;
                                 let entries = crate::checksum::hash_tree(&dest)?;
                                 let _ = std::fs::remove_dir_all(&dest);
                                 entries
@@ -559,16 +577,17 @@ impl AppView {
             } => {
                 let label = format!("Deleting {} item(s)", display_names.len());
                 let password = password.clone();
+                let backup = self.settings.backup_edits;
                 self.start_job(
                     JobKind::Delete,
                     label,
                     move |job| {
                         if format.is_tar_family() {
-                            archive::tar_delete(&archive, format, &display_names, &job)?;
+                            archive::tar_delete(&archive, format, &display_names, backup, &job)?;
                         } else {
                             let mut cmd =
                                 archive::delete_command(&archive, &raw_names, password.as_deref())?;
-                            job::run_command(&mut cmd, &job)?;
+                            job::run_command_with_password(&mut cmd, &job, password.as_deref())?;
                         }
                         Ok(JobPayload::Modified)
                     },
@@ -621,10 +640,19 @@ impl AppView {
         let Some(shared) = self.job.take() else {
             return;
         };
-        let (kind, result) = {
+        let (kind, result, cancelled) = {
             let mut job = shared.lock().unwrap();
-            (job.kind, job.result.take())
+            (job.kind, job.result.take(), job.cancel)
         };
+        if cancelled {
+            self.last_action = None;
+            if kind == JobKind::List {
+                self.archive.loading = false;
+            }
+            self.set_message("Operation cancelled", false);
+            cx.notify();
+            return;
+        }
         match result {
             None => {
                 self.last_action = None;
@@ -659,6 +687,7 @@ impl AppView {
                     }
                     _ => {
                         self.set_message(error.clone(), true);
+                        self.edit = None;
                         self.modal = Some(Modal::Info {
                             title: "Operation failed".into(),
                             body: error,
@@ -740,6 +769,7 @@ impl AppView {
                             },
                             !clean,
                         );
+                        self.edit = None;
                         self.modal = Some(Modal::Info {
                             title: "Checksum verification".into(),
                             body: summary,
@@ -756,6 +786,7 @@ impl AppView {
                     }
                     JobPayload::Checksums(entries) => {
                         self.set_message(format!("Hashed {} file(s)", entries.len()), false);
+                        self.edit = None;
                         self.modal = Some(Modal::Checksums { entries });
                     }
                     JobPayload::Tested { summary } => {
@@ -773,6 +804,7 @@ impl AppView {
                                     self.archive.password.is_some(),
                                 )
                             });
+                        self.edit = None;
                         self.modal = match stats {
                             Some(stats) => Some(Modal::TestPassed { stats }),
                             None => Some(Modal::Info {

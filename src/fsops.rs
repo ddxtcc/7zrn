@@ -1,6 +1,9 @@
 use std::ffi::OsString;
 use std::fs;
+use std::io::Read;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::archive;
@@ -88,6 +91,53 @@ pub fn read_dir(path: &Path) -> Result<Vec<FsEntry>, String> {
         );
     }
     Ok(entries)
+}
+
+static CACHE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn private_cache_root() -> PathBuf {
+    CACHE_ROOT
+        .get_or_init(|| {
+            let base = std::env::var_os("XDG_RUNTIME_DIR")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            base.join(format!("7zrn-{}", random_token()))
+        })
+        .clone()
+}
+
+fn random_token() -> u64 {
+    let mut bytes = [0u8; 8];
+    if fs::File::open("/dev/urandom").is_ok_and(|mut file| file.read_exact(&mut bytes).is_ok()) {
+        return u64::from_ne_bytes(bytes);
+    }
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos() as u64)
+        .unwrap_or(0)
+        ^ u64::from(std::process::id())
+}
+
+pub fn ensure_private_dir(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+            return Err(format!("{} is not a private directory", path.display()));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(path)
+                .map_err(|error| format!("Could not create {}: {error}", path.display()))?;
+        }
+        Err(error) => {
+            return Err(format!("Could not inspect {}: {error}", path.display()));
+        }
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .map_err(|error| format!("Could not secure {}: {error}", path.display()))
 }
 
 pub fn home_dir() -> PathBuf {

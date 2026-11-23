@@ -19,7 +19,7 @@ impl AppView {
             self.settings.nfo_font_size,
             self.settings.nfo_colors,
         ));
-        self.modal_panel(
+        self.modal_panel_scroll(
             title,
             1000.0,
             body,

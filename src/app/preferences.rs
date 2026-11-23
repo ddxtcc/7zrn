@@ -21,7 +21,13 @@ impl AppView {
         setting.set(&mut self.settings, value);
         if setting == Setting::ShowHidden {
             self.fs.show_hidden = value;
-            self.fs.clamp_active();
+            self.fs.reload();
+            for tab in &mut self.tabs {
+                if let Some(fs) = &mut tab.fs {
+                    fs.show_hidden = value;
+                    fs.reload();
+                }
+            }
         }
         if setting == Setting::CodeWrap {
             self.code_wrap = value;
