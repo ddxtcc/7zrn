@@ -203,6 +203,16 @@ impl AppView {
             } => {
                 self.start_delete(raw_names.clone(), display_names.clone(), cx);
             }
+            Modal::MoveToArchive { paths } => {
+                self.add_paths_with_mode(paths.clone(), true, cx);
+            }
+            Modal::MoveOut {
+                raw_names,
+                names,
+                dest,
+            } => {
+                self.start_move_out(raw_names.clone(), names.clone(), dest.clone(), cx);
+            }
             Modal::ArchiveEdit {
                 kind, value, error, ..
             } => {

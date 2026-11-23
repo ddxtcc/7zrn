@@ -383,6 +383,14 @@ pub(crate) enum PendingAction {
         archive: PathBuf,
         format: Format,
         paths: Vec<PathBuf>,
+        remove_sources: bool,
+    },
+    MoveOut {
+        archive: PathBuf,
+        format: Format,
+        dest: PathBuf,
+        raw_names: Vec<String>,
+        names: Vec<String>,
     },
     Open {
         archive: PathBuf,
@@ -405,6 +413,13 @@ pub(crate) enum PendingAction {
     Checksums {
         source: ChecksumSource,
     },
+    VerifyChecksums {
+        archive: PathBuf,
+        format: Format,
+        dest: PathBuf,
+        checksum_key: String,
+        entries: Vec<(String, String)>,
+    },
     OpenNested {
         archive: PathBuf,
         format: Format,
@@ -421,6 +436,7 @@ impl PendingAction {
             PendingAction::Extract { archive, .. } => archive,
             PendingAction::Test { archive, .. } => archive,
             PendingAction::Add { archive, .. } => archive,
+            PendingAction::MoveOut { archive, .. } => archive,
             PendingAction::Open { archive, .. } => archive,
             PendingAction::Delete { archive, .. } => archive,
             PendingAction::Edit { archive, .. } => archive,
@@ -431,6 +447,7 @@ impl PendingAction {
             PendingAction::Checksums {
                 source: ChecksumSource::Fs { .. },
             } => Path::new(""),
+            PendingAction::VerifyChecksums { archive, .. } => archive,
         }
     }
 
@@ -440,11 +457,13 @@ impl PendingAction {
             PendingAction::Extract { .. } => "extract from this archive",
             PendingAction::Test { .. } => "test this archive",
             PendingAction::Add { .. } => "add files to this archive",
+            PendingAction::MoveOut { .. } => "move entries out of this archive",
             PendingAction::Open { .. } => "open a file from this archive",
             PendingAction::Delete { .. } => "delete entries from this archive",
             PendingAction::Edit { .. } => "edit this archive",
             PendingAction::OpenNested { .. } => "open this archive",
             PendingAction::Checksums { .. } => "compute checksums",
+            PendingAction::VerifyChecksums { .. } => "verify checksums",
         }
     }
 }
@@ -503,6 +522,14 @@ pub(crate) enum Modal {
     },
     Checksums {
         entries: Vec<ChecksumEntry>,
+    },
+    MoveToArchive {
+        paths: Vec<PathBuf>,
+    },
+    MoveOut {
+        raw_names: Vec<String>,
+        names: Vec<String>,
+        dest: PathBuf,
     },
     Nfo {
         title: String,

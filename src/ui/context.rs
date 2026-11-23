@@ -19,7 +19,7 @@ impl AppView {
         }
         let theme = self.theme;
         let width = 224.0;
-        let height = 14.0 * 26.0 + 8.0;
+        let height = 17.0 * 26.0 + 8.0;
         let window_width = f32::from(window.bounds().size.width);
         let window_height = f32::from(window.bounds().size.height);
         let x = menu.x.clamp(4.0, (window_width - width - 8.0).max(4.0));
@@ -87,6 +87,13 @@ impl AppView {
                         |this, _, cx| this.copy_selection(cx),
                     ))
                     .child(self.context_row(
+                        "ctx-fs-move",
+                        "Move to archive",
+                        can_add,
+                        cx,
+                        |this, _, cx| this.move_to_archive(cx),
+                    ))
+                    .child(self.context_row(
                         "ctx-fs-checksums",
                         "Checksums…",
                         can_checksum,
@@ -148,6 +155,8 @@ impl AppView {
                         .unwrap_or(false);
                 let can_copy_move = can_edit && !self.arc_action_keys().is_empty();
                 let can_checksum = has_archive && !self.arc_action_keys().is_empty();
+                let can_move_out = can_edit && !self.arc_action_keys().is_empty();
+                let can_verify = has_archive && self.can_verify_archive();
                 div()
                     .flex()
                     .flex_col()
@@ -209,11 +218,25 @@ impl AppView {
                         |this, _, cx| this.request_delete(cx),
                     ))
                     .child(self.context_row(
+                        "ctx-arc-move-out",
+                        "Move to Files",
+                        can_move_out,
+                        cx,
+                        |this, _, cx| this.move_archive_to_fs(cx),
+                    ))
+                    .child(self.context_row(
                         "ctx-arc-checksums",
                         "Checksums…",
                         can_checksum,
                         cx,
                         |this, _, cx| this.checksum_archive_selection(cx),
+                    ))
+                    .child(self.context_row(
+                        "ctx-arc-verify",
+                        "Verify checksums…",
+                        can_verify,
+                        cx,
+                        |this, _, cx| this.verify_archive_checksums(cx),
                     ))
                     .child(self.context_row(
                         "ctx-arc-test",

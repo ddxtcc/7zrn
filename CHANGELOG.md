@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Verify checksum manifests inside archives without extracting the whole archive
+- Add SHA256SUMS files to the open archive from the checksum modal
+- Move Files selections into the archive with source deletion confirmation
+- Move archive entries to Files, extracting and removing the archived entries
+
 ## 0.3.0 - 2026-11-23
 
 - Old-school NFO viewer with CP437 decoding, ANSI colors, no-wrap 80-column layout, and automatic full-screen root-NFO preview

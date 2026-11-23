@@ -775,6 +775,82 @@ impl AppView {
             Modal::TestPassed { stats } => self.render_test_passed_modal(stats, cx),
             Modal::Checksums { entries } => self.render_checksums_modal(entries, cx),
             Modal::Nfo { title, document } => self.render_nfo_modal(title, document, cx),
+            Modal::MoveToArchive { paths } => {
+                let count = paths.len();
+                self.modal_panel(
+                    "Move into archive",
+                    520.0,
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(theme.muted))
+                                .child(format!("Move {count} item(s) into the archive?")),
+                        )
+                        .child(div().text_xs().text_color(rgb(theme.amber)).child(
+                            "The source files will be deleted after the archive is updated.",
+                        )),
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(self.btn("move-cancel", "Cancel", true, cx, |this, _, cx| {
+                            this.close_modal(cx)
+                        }))
+                        .child(self.primary_btn(
+                            "move-confirm",
+                            "Move",
+                            true,
+                            cx,
+                            |this, window, cx| this.submit_modal(window, cx),
+                        )),
+                    cx,
+                )
+            }
+            Modal::MoveOut {
+                raw_names: _,
+                names,
+                dest,
+            } => {
+                let count = names.len();
+                self.modal_panel(
+                    "Move out of archive",
+                    560.0,
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(theme.muted))
+                                .child(format!("Move {count} item(s) to {}?", dest.display())),
+                        )
+                        .child(div().text_xs().text_color(rgb(theme.amber)).child(
+                            "The entries will be removed from the archive after extraction.",
+                        )),
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            self.btn("move-out-cancel", "Cancel", true, cx, |this, _, cx| {
+                                this.close_modal(cx)
+                            }),
+                        )
+                        .child(self.primary_btn(
+                            "move-out-confirm",
+                            "Move",
+                            true,
+                            cx,
+                            |this, window, cx| this.submit_modal(window, cx),
+                        )),
+                    cx,
+                )
+            }
             Modal::Info { title, body, error } => {
                 let mut lines = div().flex().flex_col().gap_1();
                 for line in body.lines() {

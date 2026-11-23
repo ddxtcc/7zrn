@@ -239,6 +239,15 @@ impl AppView {
     }
 
     pub(crate) fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.add_paths_with_mode(paths, false, cx);
+    }
+
+    pub(crate) fn add_paths_with_mode(
+        &mut self,
+        paths: Vec<PathBuf>,
+        remove_sources: bool,
+        cx: &mut Context<Self>,
+    ) {
         let Some(archive_path) = self.archive.archive.clone() else {
             self.set_message("Open an archive first", true);
             cx.notify();
@@ -268,6 +277,83 @@ impl AppView {
                 archive: archive_path,
                 format,
                 paths,
+                remove_sources,
+            },
+            None,
+            cx,
+        );
+    }
+
+    pub(crate) fn move_to_archive(&mut self, cx: &mut Context<Self>) {
+        let paths = self.fs_action_paths();
+        if paths.is_empty() {
+            self.set_message("Select files or folders to move", true);
+            cx.notify();
+            return;
+        }
+        let Some(format) = self.archive.format else {
+            self.set_message("Open an archive first", true);
+            cx.notify();
+            return;
+        };
+        if !format.can_modify() || self.archive.archive.is_none() {
+            self.set_message(format!("{} archives are read-only", format.label()), true);
+            cx.notify();
+            return;
+        }
+        self.modal = Some(Modal::MoveToArchive { paths });
+        self.edit = None;
+        cx.notify();
+    }
+
+    pub(crate) fn move_archive_to_fs(&mut self, cx: &mut Context<Self>) {
+        let keys = self.arc_action_keys();
+        if keys.is_empty() {
+            self.set_message("Select archive entries to move", true);
+            cx.notify();
+            return;
+        }
+        let Some(format) = self.archive.format else {
+            return;
+        };
+        if !format.can_modify() {
+            self.set_message(format!("{} archives are read-only", format.label()), true);
+            cx.notify();
+            return;
+        }
+        let raw_names = self.archive.expand_raw(&keys);
+        if raw_names.is_empty() {
+            return;
+        }
+        self.modal = Some(Modal::MoveOut {
+            raw_names,
+            names: keys,
+            dest: self.fs.path.clone(),
+        });
+        self.edit = None;
+        cx.notify();
+    }
+
+    pub(crate) fn start_move_out(
+        &mut self,
+        raw_names: Vec<String>,
+        names: Vec<String>,
+        dest: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(archive) = self.archive.archive.clone() else {
+            return;
+        };
+        let Some(format) = self.archive.format else {
+            return;
+        };
+        self.execute_action(
+            PendingAction::MoveOut {
+                archive,
+                format,
+                dest,
+                raw_names,
+                names,
             },
             None,
             cx,

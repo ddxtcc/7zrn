@@ -95,6 +95,33 @@ pub(crate) fn looks_like_manifest(path: &Path) -> bool {
         || name.ends_with(".sha256sum")
 }
 
+pub(crate) fn manifest_names(path: &Path) -> Result<Vec<String>, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    let mut names = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((hash, name)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        if hash.is_empty() {
+            continue;
+        }
+        let name = name.trim().trim_start_matches('*');
+        if !name.is_empty() {
+            names.push(name.to_string());
+        }
+    }
+    if names.is_empty() {
+        Err("No checksum entries found.".into())
+    } else {
+        Ok(names)
+    }
+}
+
 pub(crate) fn verify_manifest(path: &Path) -> Result<Verification, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("Could not read {}: {error}", path.display()))?;

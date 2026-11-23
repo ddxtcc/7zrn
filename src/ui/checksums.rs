@@ -62,6 +62,12 @@ impl AppView {
             .child(list);
         let entries_copy = entries.to_vec();
         let entries_save = entries.to_vec();
+        let entries_archive = entries.to_vec();
+        let can_add = self.archive.archive.is_some()
+            && self
+                .archive
+                .format
+                .is_some_and(|format| format.can_modify());
         self.modal_panel(
             "Checksums",
             820.0,
@@ -83,6 +89,13 @@ impl AppView {
                     true,
                     cx,
                     move |this, _, cx| this.save_checksums(&entries_save, cx),
+                ))
+                .child(self.btn(
+                    "checksums-archive",
+                    "Add to archive",
+                    can_add,
+                    cx,
+                    move |this, _, cx| this.add_checksums_to_archive(&entries_archive, cx),
                 ))
                 .child(
                     self.primary_btn("checksums-close", "Close", false, cx, |this, _, cx| {

@@ -43,6 +43,11 @@ pub enum JobPayload {
         title: String,
     },
     Checksums(Vec<crate::checksum::ChecksumEntry>),
+    MovedOut {
+        dest: std::path::PathBuf,
+        count: usize,
+        names: Vec<String>,
+    },
     Verified {
         summary: String,
         failed: usize,

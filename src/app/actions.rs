@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui::{Context, Timer};
@@ -245,9 +245,14 @@ impl AppView {
                 archive,
                 format,
                 paths,
+                remove_sources,
             } => {
                 let count = paths.len();
-                let label = format!("Adding {count} item(s) to archive");
+                let label = if remove_sources {
+                    format!("Moving {count} item(s) to archive")
+                } else {
+                    format!("Adding {count} item(s) to archive")
+                };
                 let password = password.clone();
                 self.start_job(
                     JobKind::Add,
@@ -261,6 +266,9 @@ impl AppView {
                             {
                                 job::run_command(&mut cmd, &job)?;
                             }
+                        }
+                        if remove_sources {
+                            delete_sources(&paths, &archive)?;
                         }
                         Ok(JobPayload::Modified)
                     },
@@ -318,6 +326,122 @@ impl AppView {
                     move |job| {
                         archive::apply_edit(&archive, format, edit, password.as_deref(), &job)?;
                         Ok(JobPayload::Modified)
+                    },
+                    cx,
+                );
+            }
+            PendingAction::VerifyChecksums {
+                archive,
+                format,
+                dest,
+                checksum_key,
+                entries,
+            } => {
+                let label = format!("Verifying {checksum_key}");
+                let password = password.clone();
+                self.start_job(
+                    JobKind::Verify,
+                    label,
+                    move |job| {
+                        std::fs::create_dir_all(&dest).map_err(|error| {
+                            format!("Could not create {}: {error}", dest.display())
+                        })?;
+                        let manifest_raw = entries
+                            .iter()
+                            .find(|(display, _)| display == &checksum_key)
+                            .map(|(_, raw)| raw.clone())
+                            .ok_or_else(|| "Checksum file not found in archive".to_string())?;
+                        job::note(&job, "Extracting checksum manifest...");
+                        let mut extract = archive::extract_command(
+                            &archive,
+                            format,
+                            &dest,
+                            std::slice::from_ref(&manifest_raw),
+                            password.as_deref(),
+                        )?;
+                        job::run_command(&mut extract, &job)?;
+                        let manifest_path = archive::find_extracted(&dest, &checksum_key)
+                            .ok_or_else(|| {
+                                "Could not find extracted checksum manifest".to_string()
+                            })?;
+                        let names = crate::checksum::manifest_names(&manifest_path)?;
+                        let base = checksum_key
+                            .rsplit_once('/')
+                            .map(|(base, _)| base)
+                            .unwrap_or("");
+                        let mut raw_names = vec![manifest_raw];
+                        for name in &names {
+                            let key = if base.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{base}/{name}")
+                            };
+                            if let Some((_, raw)) =
+                                entries.iter().find(|(display, _)| display == &key)
+                            {
+                                raw_names.push(raw.clone());
+                            }
+                        }
+                        raw_names.sort();
+                        raw_names.dedup();
+                        job::note(&job, "Extracting checksum targets...");
+                        let mut extract = archive::extract_command(
+                            &archive,
+                            format,
+                            &dest,
+                            &raw_names,
+                            password.as_deref(),
+                        )?;
+                        job::run_command(&mut extract, &job)?;
+                        let manifest_path = archive::find_extracted(&dest, &checksum_key)
+                            .ok_or_else(|| {
+                                "Could not find extracted checksum manifest".to_string()
+                            })?;
+                        let verification = crate::checksum::verify_manifest(&manifest_path)?;
+                        let _ = std::fs::remove_dir_all(&dest);
+                        job::note(&job, verification.summary());
+                        Ok(JobPayload::Verified {
+                            summary: verification.summary(),
+                            failed: verification.failed,
+                            missing: verification.missing,
+                        })
+                    },
+                    cx,
+                );
+            }
+            PendingAction::MoveOut {
+                archive,
+                format,
+                dest,
+                raw_names,
+                names,
+            } => {
+                let count = names.len();
+                let label = format!("Moving {count} item(s) to {}", dest.display());
+                let password = password.clone();
+                self.start_job(
+                    JobKind::Extract,
+                    label,
+                    move |job| {
+                        std::fs::create_dir_all(&dest).map_err(|error| {
+                            format!("Could not create {}: {error}", dest.display())
+                        })?;
+                        let mut extract = archive::extract_command(
+                            &archive,
+                            format,
+                            &dest,
+                            &raw_names,
+                            password.as_deref(),
+                        )?;
+                        job::run_command(&mut extract, &job)?;
+                        if format.is_tar_family() {
+                            archive::tar_delete(&archive, format, &names, &job)?;
+                        } else {
+                            let mut delete =
+                                archive::delete_command(&archive, &raw_names, password.as_deref())?;
+                            job::run_command(&mut delete, &job)?;
+                        }
+                        Ok(JobPayload::MovedOut { dest, count, names })
                     },
                     cx,
                 );
@@ -554,6 +678,14 @@ impl AppView {
                             error: false,
                         });
                     }
+                    JobPayload::MovedOut { dest, count, names } => {
+                        self.set_message(
+                            format!("Moved {count} item(s) to {}", dest.display()),
+                            false,
+                        );
+                        self.refresh_archive(cx);
+                        self.reveal_extracted(dest, names, cx);
+                    }
                     JobPayload::Checksums(entries) => {
                         self.set_message(format!("Hashed {} file(s)", entries.len()), false);
                         self.modal = Some(Modal::Checksums { entries });
@@ -587,4 +719,23 @@ impl AppView {
         }
         cx.notify();
     }
+}
+
+fn delete_sources(paths: &[PathBuf], archive: &Path) -> Result<(), String> {
+    let archive = std::fs::canonicalize(archive).unwrap_or_else(|_| archive.to_path_buf());
+    for path in paths {
+        if std::fs::canonicalize(path).ok().as_deref() == Some(archive.as_path()) {
+            continue;
+        }
+        let meta = std::fs::symlink_metadata(path)
+            .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+        if meta.is_dir() && !meta.file_type().is_symlink() {
+            std::fs::remove_dir_all(path)
+                .map_err(|error| format!("Could not remove {}: {error}", path.display()))?;
+        } else {
+            std::fs::remove_file(path)
+                .map_err(|error| format!("Could not remove {}: {error}", path.display()))?;
+        }
+    }
+    Ok(())
 }

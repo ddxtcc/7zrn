@@ -91,9 +91,96 @@ impl AppView {
         );
     }
 
+    pub(crate) fn verify_archive_checksums(&mut self, cx: &mut Context<Self>) {
+        let keys = self.arc_action_keys();
+        let Some(checksum_key) = keys
+            .iter()
+            .find(|key| crate::checksum::looks_like_manifest(std::path::Path::new(key)))
+            .cloned()
+        else {
+            self.set_message("Select a checksum manifest inside the archive", true);
+            cx.notify();
+            return;
+        };
+        let Some(archive) = self.archive.archive.clone() else {
+            return;
+        };
+        let Some(format) = self.archive.format else {
+            return;
+        };
+        let Some(listing) = self.archive.listing.as_ref() else {
+            return;
+        };
+        let entries: Vec<(String, String)> = listing
+            .entries
+            .iter()
+            .map(|entry| (entry.display_path.clone(), entry.raw_path.clone()))
+            .collect();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let dest = std::env::temp_dir()
+            .join("7zrn-verify")
+            .join(std::process::id().to_string())
+            .join(stamp.to_string());
+        self.execute_action(
+            PendingAction::VerifyChecksums {
+                archive,
+                format,
+                dest,
+                checksum_key,
+                entries,
+            },
+            None,
+            cx,
+        );
+    }
+
+    pub(crate) fn can_verify_archive(&self) -> bool {
+        self.arc_action_keys()
+            .iter()
+            .any(|key| crate::checksum::looks_like_manifest(std::path::Path::new(key)))
+    }
+
     pub(crate) fn can_verify_active(&self) -> bool {
         self.fs_active_key()
             .is_some_and(|path| crate::checksum::looks_like_manifest(&path))
+    }
+
+    pub(crate) fn add_checksums_to_archive(
+        &mut self,
+        entries: &[crate::checksum::ChecksumEntry],
+        cx: &mut Context<Self>,
+    ) {
+        if self.archive.archive.is_none() {
+            self.set_message("Open an archive first", true);
+            cx.notify();
+            return;
+        }
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let directory =
+            std::env::temp_dir().join(format!("7zrn-checksums-{}-{stamp}", std::process::id()));
+        if let Err(error) = std::fs::create_dir_all(&directory) {
+            self.set_message(
+                format!("Could not create temporary directory: {error}"),
+                true,
+            );
+            cx.notify();
+            return;
+        }
+        let path = directory.join("SHA256SUMS");
+        if let Err(error) = std::fs::write(&path, crate::checksum::manifest(entries)) {
+            self.set_message(format!("Could not write SHA256SUMS: {error}"), true);
+            cx.notify();
+            return;
+        }
+        self.modal = None;
+        self.edit = None;
+        self.add_paths(vec![path], cx);
     }
 
     pub(crate) fn save_checksums(
