@@ -68,7 +68,9 @@ impl Setting {
             Setting::OpenAfterExtract => {
                 "Navigate to the extracted files and highlight them in Files."
             }
-            Setting::AutoPreview => "Show files up to 4 MiB in the preview pane on click.",
+            Setting::AutoPreview => {
+                "Show files up to 64 MiB in the preview pane on click. Audio uses a 1 GiB limit."
+            }
             Setting::ConfirmMove => "Ask before deleting sources during a move.",
             Setting::AutoNfoFull => "Open the full NFO viewer when an archive contains a root NFO.",
             Setting::NfoColors => "Preserve ANSI colors and bold attributes in NFO art.",

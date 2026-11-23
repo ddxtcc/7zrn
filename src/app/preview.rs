@@ -6,12 +6,15 @@ use std::time::Duration;
 use gpui::{ClipboardItem, Context, Timer};
 
 use crate::archive::{self, Child, Format};
+use crate::audio;
 use crate::preview::{self, PreviewContent};
 use crate::state::{Modal, PendingAction, PreviewView};
 
 use super::AppView;
 
-pub(crate) const PREVIEW_LIMIT: u64 = 4 * 1024 * 1024;
+pub(crate) const PREVIEW_LIMIT: u64 = 64 * 1024 * 1024;
+const AUDIO_PREVIEW_LIMIT: u64 = 1024 * 1024 * 1024;
+const ARCHIVE_AUDIO_PREVIEW_LIMIT: u64 = 512 * 1024 * 1024;
 
 impl AppView {
     pub(crate) fn preview_fs_active(&mut self, cx: &mut Context<Self>) {
@@ -43,14 +46,15 @@ impl AppView {
         let size = std::fs::metadata(&path)
             .map(|metadata| metadata.len())
             .unwrap_or(0);
-        if size > PREVIEW_LIMIT {
+        let limit = preview_limit(&path);
+        if size > limit {
             if automatic {
                 return;
             }
             self.show_preview(
                 None,
                 title,
-                PreviewContent::Unsupported("File is too large to preview (max 4 MiB).".into()),
+                PreviewContent::Unsupported(limit_message(limit)),
                 cx,
             );
             return;
@@ -151,14 +155,15 @@ impl AppView {
         else {
             return;
         };
-        if entry.size > PREVIEW_LIMIT {
+        let limit = archive_preview_limit(&key);
+        if entry.size > limit {
             if automatic {
                 return;
             }
             self.show_preview(
                 None,
                 key,
-                PreviewContent::Unsupported("File is too large to preview (max 4 MiB).".into()),
+                PreviewContent::Unsupported(limit_message(limit)),
                 cx,
             );
             return;
@@ -506,6 +511,27 @@ impl AppView {
         }
         cx.notify();
     }
+}
+
+fn preview_limit(path: &Path) -> u64 {
+    if audio::is_audio(path) {
+        AUDIO_PREVIEW_LIMIT
+    } else {
+        PREVIEW_LIMIT
+    }
+}
+
+fn archive_preview_limit(name: &str) -> u64 {
+    if audio::is_audio(Path::new(name)) {
+        ARCHIVE_AUDIO_PREVIEW_LIMIT
+    } else {
+        PREVIEW_LIMIT
+    }
+}
+
+fn limit_message(limit: u64) -> String {
+    let mebibytes = limit / (1024 * 1024);
+    format!("File is too large to preview (max {mebibytes} MiB).")
 }
 
 fn preview_cache_dir(archive: &Path) -> PathBuf {
