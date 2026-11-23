@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-11-23
 
 - Old-school NFO viewer with CP437 decoding, ANSI colors, no-wrap 80-column layout, and automatic full-screen root-NFO preview
 - RAR and RAR5 detection and extraction through 7z
